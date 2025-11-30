@@ -1,7 +1,0 @@
-name: spd2010_touch
-version: 0.1.0
-build:
-  cpp_flags: [-std=gnu++17]
-dependencies:
-  - i2c
-  - lvgl
