@@ -1071,6 +1071,7 @@ lvgl:
             text: "-- W"
             text_font: montserrat_22
             text_color: 0x2196F3 
+        #used to display the type of the wheely bin collected this week, needs Waste Collection Schedule in HACS to sync this with the calandar
         - label:
             id: bin_label
             align: CENTER
