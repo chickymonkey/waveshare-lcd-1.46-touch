@@ -3,6 +3,7 @@
 # Response and shopping list scroll when content is longer than it's label size
 # v1.2 touch integrated with spd2010_glue component
 # v1.3 migrated to the new mipi spi display setting, modified init sequence as per https://components.espressif.com/components/espressif/esp_lcd_spd2010/versions/2.0.0~1/readme?language=en
+#todo: gyroscope: https://github.com/dala318/esphome-qmi8658/blob/main/led8x8-qmi8658.yaml
 #media_player.xiao_ai_yin_xiang_9318
 ---
 substitutions:
