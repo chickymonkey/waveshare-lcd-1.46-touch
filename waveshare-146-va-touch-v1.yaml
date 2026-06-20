@@ -2,16 +2,21 @@
 # avoid screen swap when Voice assistant, or timer is active.
 # Response and shopping list scroll when content is longer than it's label size
 # v1.2 touch integrated with spd2010_glue component
+#media_player.xiao_ai_yin_xiang_9318
 ---
 substitutions:
   #bg_img: /config/esphome/images/default/waveshare_bg_tp420.jpg
   bg_img: "https://raw.githubusercontent.com/chickymonkey/waveshare-lcd-1.46-touch/refs/heads/main/waveshare_bg_tp420.jpg"
-  music_bg_img: "/config/esphome/images/default/music_bg_412.png"
+  music_bg_img: "https://raw.githubusercontent.com/chickymonkey/waveshare-lcd-1.46-touch/refs/heads/main/music_bg_412.png"
   wifi_name: "Waveshare-146-Va"
-  left_sensor: "sensor.rumpus_wroom_battery_powerpal_real_time_power"
+  left_sensor: "sensor.powerpal_real_time_power"
+  dishwasher_price_sensor: "sensor.finish_dishwashing_tablets_56_pack"
   right_switch: "light.tv_floor_lamp"
-  external_media_player: "ke_ting_xiao_ai_pro_play_control"
-
+  #media player in home assistant
+  external_media_player: "living_room_speaker"
+  #some chinese font
+  cn_font: "/config/esphome/font/hpsimplifiedhans-regular.ttf"
+  
 esphome:
   name: waveshare-146-va
   friendly_name: waveshare 146 va 1.2
@@ -19,14 +24,13 @@ esphome:
     - priority: 600
       then:
         - delay: 15s
-        #- text_sensor.template.publish: { id: text_response, state: "Say Hey Jarvis" }
         - script.execute: draw_display
         - media_player.speaker.play_on_device_media_file:
             media_file: timer_finished_sound
             announcement: true
 
-    # You can have multiple on_boot blocks; this one runs late
-    - priority: -100 
+    - priority: -100
+      #initialize the touch driver
       then:
         - delay: 300ms
         - lambda: |-
@@ -49,43 +53,64 @@ esp32:
       CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
       CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
       CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
-      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
-      CONFIG_SPIRAM_RODATA: y
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
+      CONFIG_SPIRAM_RODATA: "y"
       CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
       CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
-      #CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
-      #CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
-
+#      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+#      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
+    advanced:
+      execute_from_psram: true
+      compiler_optimization: "PERF"
 logger:
-  level: WARN
-
+  level: DEBUG
+  logs:
+    text_sensor: INFO
+    sensor: WARN
+    component: WARN
+    select: INFO
+    light: INFO
+    lvgl: INFO
+    display: WARN
+    speaker: WARN
+    microphone: DEBUG
+    audio: DEBUG
+    micro_wake_word: DEBUG
+    voice_assistant: DEBUG
+    media_player: WARN
+    spd2010_glue: WARN
 api:
-# Disabled encryption 
-#encryption:
-#    key: "/NRi8kWEuodQFhY40a8yvujDUELH0yhZIOTECv81wU0="
-
+  encryption:
+    key: "/NRi8kWEuodQFhY40a8yvujDUELH0yhZIOTECv81wU0="
   on_client_connected:
     then:
       - delay: 1.5s
       - script.execute: update_timer_progress_arc
-      - text_sensor.template.publish: { id: text_response, state: "Say 'HEY JARVIS'" }
       - script.execute: draw_display
 #used to check free ram, cpu.
 debug:
-  update_interval: 30s
+  update_interval: 60s
 
 ota:
   - platform: esphome
-    password: "yourencryption"
+    password: "1554a3a8fd1fa8d97307d74f21aa9fde"
+
+    on_begin:
+      - logger.log:
+          level: INFO
+          tag: ota
+          format: "OTA begin: loop watchdog suspended, pausing full audio runtime and LVGL"
+      - globals.set:
+          id: g_ota_in_progress
+          value: "true"
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-
+  power_save_mode: NONE
   ap:
     ssid: "Waveshare-146-Va"
     password: "wifi12345"
-
 
 captive_portal:
 
@@ -107,46 +132,23 @@ time:
           - switch.turn_off: switch_antiburn
 
 interval:
-  - interval: 60s
+  - interval: 30s
     then:
       - script.execute: check_dim
-      
-#  - interval: 1s
-#    then:
-#      - if:
-#          condition:
-#            lambda: 'return id(va_blinking);'
-#          then:
-#            - lambda: |-
-#                id(va_blink_on) = !id(va_blink_on);
-#            # Use two explicit branches so we can pass literal percent values
-#            - if:
-#                condition:
-#                  lambda: 'return id(va_blink_on);'
-#                then:
-#                  - lvgl.label.update:
-#                      id: va_phase_label
-#                      text_opa: 90%
-#
-#                else:
-#                  - lvgl.label.update:
-#                      id: va_phase_label
-#                      text_opa: 10%
 
-#      - script.execute: update_timer_progress_arc
-
+network:
+  enable_high_performance: false
 psram:
   mode: octal
   speed: 80MHz
 
 i2s_audio:
   - id: i2s_output
-    # i2s_output data pin is gpio10
     i2s_lrclk_pin:
       number: GPIO38
     i2s_bclk_pin:
       number: GPIO48
-
+    
   - id: i2s_input
     i2s_lrclk_pin:
       number: GPIO2
@@ -158,12 +160,11 @@ microphone:
     id: i2s_microphone
     i2s_audio_id: i2s_input
     i2s_din_pin: GPIO39
-    #i2s_din_pin: GPIO15
     adc_type: external
     pdm: false
     channel: right
     sample_rate: 16000
-    bits_per_sample: 16bit
+    bits_per_sample: 32bit #changed from 16bit to 32, aligning with the driver in the demo
 
 speaker:
   - platform: i2s_audio
@@ -171,27 +172,28 @@ speaker:
     i2s_audio_id: i2s_output
     i2s_dout_pin: GPIO47
     dac_type: external
-    #channel: stereo
     channel: mono
-    buffer_duration: 800ms #default 500ms
+    buffer_duration: 600ms #default 500ms
+    
 
-# MEDIA PLAYER → binds VA audio output to your existing i2s speaker
 media_player:
   - platform: speaker
     id: speaker_media_player
     name: None
-    volume_min: 0.5
+    volume_min: 0.6
     volume_max: 1
-    volume_initial: 0.8
+    volume_initial: 0.9
     task_stack_in_psram: true
     announcement_pipeline:
       speaker: i2s_audio_speaker
       format: FLAC
-      sample_rate: 48000
-      num_channels: 2
+      sample_rate: 16000
+      num_channels: 1
     files:
       - id: timer_finished_sound
         file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/timer_finished.flac
+      - id: wake_word_triggered_sound
+        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
   
     # Pause wake word during announcements, then redraw
     on_announcement:
@@ -218,6 +220,7 @@ media_player:
             - script.execute: draw_display
     on_idle:
       # Restart wake word after announcement finishes
+      - delay: 150ms
       - if:
           condition:
             not:
@@ -226,7 +229,6 @@ media_player:
             - script.execute: start_wake_word
             - script.execute: set_idle_or_mute_phase
             - script.execute: draw_display
-
 
 micro_wake_word:
   id: mww
@@ -241,60 +243,61 @@ voice_assistant:
   microphone: i2s_microphone
   media_player: speaker_media_player
   micro_wake_word: mww
-  noise_suppression_level: 1
+  noise_suppression_level: 0
   auto_gain: 31dBFS
-  volume_multiplier: 2
+  volume_multiplier: 3.5
   # Screen hooks (update response + phases)
   on_listening:
+    - logger.log: "VA: listening for command"
+    - media_player.speaker.play_on_device_media_file:
+        media_file: wake_word_triggered_sound
+        announcement: true
+        id: speaker_media_player
     - lambda: id(voice_assistant_phase) = id(voice_assist_listening_phase_id);
 
     - text_sensor.template.publish:
         id: text_response
         state: "..."
     - script.execute: draw_display
-    
     # Make the arc visible and set it to full ring during listening
     - lvgl.widget.update:
         id: timer_progress_arc
         hidden: false
-      
     - light.turn_on:
         id: screen_backlight
         brightness: 80%
     #listening effect for listening status.
     - lambda: |-
-        //id(va_blinking) = true;
         id(va_listening_glow) = true;
     - lvgl.widget.update:
         id: va_phase_label
         text_opa: 100%
     - script.execute: update_timer_progress_arc
     - lambda: 'id(last_active_ms) = millis();'
-
+  on_stt_vad_start:
+    - logger.log: "VA: VAD detected speech start"
   on_stt_vad_end:
+    - logger.log: "VA: VAD detected speech end"
     - lambda: id(voice_assistant_phase) = id(voice_assist_thinking_phase_id);
     - script.execute: draw_display
-    - lvgl.widget.update:
-        id: timer_progress_arc
-        hidden: true
-        indicator:
-          bg_color: green
-          opa: COVER
     - lambda: 'id(va_listening_glow) = false;'
     - script.execute: update_timer_progress_arc
   on_tts_start:
+    - lambda: id(voice_assistant_phase) = id(voice_assist_replying_phase_id);
     - text_sensor.template.publish:
         id: text_response
         state: !lambda return x;
-    - lambda: id(voice_assistant_phase) = id(voice_assist_replying_phase_id);
-    - script.execute: draw_display
+    - lvgl.label.update:
+        id: va_response_label
+        text: !lambda return id(text_response).state.c_str();
+        text_opa: 100%
     - lambda: 'id(last_active_ms) = millis();'
     - lvgl.widget.update:
         id: timer_progress_arc
         hidden: true
-    
     - lambda: 'id(va_listening_glow) = false;'
     - script.execute: update_timer_progress_arc
+    - script.execute: draw_display
 
   on_end:
     - wait_until:
@@ -303,7 +306,7 @@ voice_assistant:
         timeout: 1.5s
     
     - lambda: 'id(last_active_ms) = millis();'
-    
+
     - wait_until:
         condition:
           and:
@@ -311,33 +314,20 @@ voice_assistant:
                 media_player.is_announcing:
             - not:
                 speaker.is_playing:
-
     - if:
         condition:
           lambda: return id(wake_word_engine_location).state == "On device";
         then:
           - lambda: id(va).set_use_wake_word(false);
-          - micro_wake_word.start:
+          - script.execute: start_wake_word
 
     - script.execute: set_idle_or_mute_phase
-    
-    # Change text sensors
-    - text_sensor.template.publish: { id: text_response, state: "Say 'HEY JARVIS'" }
-    - lvgl.label.update:
-        id: va_response_label
-        text: "Say 'HEY JARVIS'"
-        text_opa: 100%
-    - lambda: |-
-        id(va_blinking) = false;
-    # Restore to a steady state (100% opacity and a status you prefer)
-    - lvgl.label.update:
-        id: va_phase_label
-        text: "Idle"
-        text_opa: 100%
+
     - lvgl.widget.update:
         id: timer_progress_arc
         hidden: true
     - script.execute: draw_display
+    
   # End of On_end  
   on_error:
     - lambda: id(voice_assistant_phase) = id(voice_assist_error_phase_id);
@@ -387,7 +377,7 @@ voice_assistant:
     - text_sensor.template.publish: { id: text_response, state: "" }
   on_timer_finished:
     - script.execute: update_timer_progress_arc
-    - script.execute: ring_timer_12x
+    - switch.turn_on: timer_ringing
     - lambda: id(voice_assistant_phase) = id(voice_assist_timer_finished_phase_id);
     - lvgl.widget.update:
         id: timer_progress_arc
@@ -395,14 +385,12 @@ voice_assistant:
     - light.turn_on:
         id: screen_backlight
         brightness: 80%
-    - text_sensor.template.publish: { id: text_response, state: "Say 'HEY JARVIS'" }
     - script.execute: draw_display
 button:
   - platform: restart
-    name: "Kitchen ESP Restart"
+    name: "Kitchen ESP Reset"
 # -----------------------------------------------------------------------------
 # MUTE SWITCH (software mute)
-# -----------------------------------------------------------------------------
 switch:
   - platform: template
     name: Mute
@@ -427,7 +415,7 @@ switch:
     optimistic: true
     entity_category: "config"
     turn_on_action:
-      - logger.log: "Starting Antiburn"
+      #- logger.log: "Starting Antiburn"
       - if:
           condition: lvgl.is_paused
           then:
@@ -436,15 +424,52 @@ switch:
       - lvgl.pause:
           show_snow: true
     turn_off_action:
-      - logger.log: "Stopping Antiburn"
+      #- logger.log: "Stopping Antiburn"
       - if:
           condition: lvgl.is_paused
           then:
             - lvgl.resume:
             - lvgl.widget.redraw:
+
+  - platform: template
+    id: timer_ringing
+    optimistic: true
+    internal: true
+    restore_mode: ALWAYS_OFF
+    on_turn_off:
+      # Turn off the repeat mode and disable the pause between playlist items
+      - lambda: |-
+              id(speaker_media_player)
+                ->make_call()
+                .set_command(media_player::MediaPlayerCommand::MEDIA_PLAYER_COMMAND_REPEAT_OFF)
+                .set_announcement(true)
+                .perform();
+              id(speaker_media_player)->set_playlist_delay_ms(speaker::AudioPipelineType::ANNOUNCEMENT, 0);
+      # Stop playing the alarm
+      - media_player.stop:
+          announcement: true
+    on_turn_on:
+      # Turn on the repeat mode and pause for 1000 ms between playlist items/repeats
+      - lambda: |-
+            id(speaker_media_player)
+              ->make_call()
+              .set_command(media_player::MediaPlayerCommand::MEDIA_PLAYER_COMMAND_REPEAT_ONE)
+              .set_announcement(true)
+              .perform();
+            id(speaker_media_player)->set_playlist_delay_ms(speaker::AudioPipelineType::ANNOUNCEMENT, 1000);
+      #make sure volume is not too small for alarm.
+      - speaker.volume_set:
+          id: i2s_audio_speaker
+          volume: 95%
+
+      - media_player.speaker.play_on_device_media_file:
+          media_file: timer_finished_sound
+          announcement: true
+      ##play for 20 seconds.
+      - delay: 22s
+      - switch.turn_off: timer_ringing
 # -----------------------------------------------------------------------------
 # SELECT → choose wake word engine location (device vs HA streaming)
-# -----------------------------------------------------------------------------
 select:
   - platform: template
     entity_category: config
@@ -493,36 +518,68 @@ select:
                 then:
                   - micro_wake_word.start
 
-
 # -----------------------------------------------------------------------------
 # SCRIPTS → start/stop wake word + phase helper
-# -----------------------------------------------------------------------------
-
 script:
   - id: start_wake_word
     then:
-      # Start on-device micro wake word when VA isn't already running
+      # MWW owns the microphone consumer and starts the AFE/I2S path. Do not
+      # start it from early boot or generic API callbacks; wait for init to
+      # clear and make every caller pass through this single gate.
+      - wait_until:
+          condition:
+            lambda: 'return millis() >= 10000;'
+          timeout: 10s
+      - delay: 2s
       - if:
           condition:
             and:
+              # run only if none met: initializing, ota in progress, wake word not enabled, mute,
+              #va running, wake word running, media player announcing, ww is on device.
+              - lambda: 'return !id(init_in_progress);'
+              - lambda: 'return !id(g_ota_in_progress);'
+              - switch.is_off: mute
               - not:
                   voice_assistant.is_running:
+              - not:
+                  micro_wake_word.is_running:
+              - not:
+                  media_player.is_announcing:
+                    id: speaker_media_player
               - lambda: return id(wake_word_engine_location).state == "On device";
           then:
             - lambda: id(va).set_use_wake_word(false);
             - micro_wake_word.start:
-
-      # Start HA streaming wake word when VA isn't already running
+            - delay: 1s
+            - lambda: |-
+                TaskHandle_t mww_task = xTaskGetHandle("mww");
+                if (mww_task) {
+                  vTaskPrioritySet(mww_task, 8);
+                }
+            - logger.log:
+                tag: mww
+                format: "MWW: safe start"
+          else:
+            - logger.log:
+                level: INFO
+                tag: mww
+                format: "MWW: safe start skipped init=%d ota=%d mute=%d va=%d mww=%d announcing=%d"
+                args:
+                  - id(init_in_progress)
+                  - id(g_ota_in_progress)
+                  - id(mute).state
+                  - id(va).is_running()
+                  - id(mww).is_running()
+                  - id(speaker_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING
       - if:
           condition:
             and:
               - not:
-                  voice_assistant.is_running:
+                  - voice_assistant.is_running:
               - lambda: return id(wake_word_engine_location).state == "In Home Assistant";
           then:
             - lambda: id(va).set_use_wake_word(true);
-            - voice_assistant.start_continuous:
-
+            - voice_assistant.start_continuous: # continuous wake word only supported when wake word is "In Home Assistant"
 
   # Stops either micro wake word or streaming wake word
   - id: stop_wake_word
@@ -586,7 +643,7 @@ script:
                       id: va_phase_label
                       text: !lambda |-
                         switch (id(voice_assistant_phase)) {
-                          case 1:  return "Idle";
+                          case 1:  return "Idle - 'HEY JARVIS'";
                           case 2:  return "Listening...";
                           case 3:  return "Thinking...";
                           case 4:  return "Replying...";
@@ -594,10 +651,9 @@ script:
                           case 11: return "Error";
                           case 12: return "Muted";
                           case 20: return "Timer finished";
-                          default: return "Idle";
+                          default: return "Idle - 'HEY JARVIS'";
                         }
         
-
                   - lvgl.label.update:
                       id: va_response_label
                       text: !lambda return id(text_response).state.c_str();
@@ -647,7 +703,6 @@ script:
             - lvgl.widget.redraw: timer_progress_text
 
   # Helper: apply muted style dimming when the Mute switch is ON
-
   - id: lvgl_apply_mute_style_if_needed
     then:
       - if:
@@ -658,7 +713,6 @@ script:
             - lvgl.widget.update:
                 id: va_phase_label
                 text_color: red  
-
             - lvgl.widget.update:
                 id: va_response_label
                 text_color: 0xFFFFFF
@@ -672,26 +726,6 @@ script:
             - lvgl.widget.update:
                 id: va_response_label
                 text_color: 0xFFFFFF
-
-  - id: ring_timer_12x
-    mode: queued
-    then:
-      - repeat:
-          count: 12
-          then:
-            - media_player.speaker.play_on_device_media_file:
-                media_file: timer_finished_sound
-                announcement: true
-
-            - wait_until:
-                condition:
-                  - not:
-                      media_player.is_announcing:
-                timeout: 6s
-
-            # Small gap between repeats
-            - delay: 500ms
-      - text_sensor.template.publish: { id: text_response, state: "Say 'HEY JARVIS'" }
 
   - id: listening_arc_pulse
     mode: restart
@@ -736,20 +770,18 @@ script:
                   arc_color: yellow
             - delay: 250ms
 
-
   - id: update_timer_progress_arc
     then:
       - lambda: |-
-          // Get all timers
-          const auto timers = id(va).get_timers();
-          bool has_any = timers.size() > 0;
+          // Get all timers (now std::vector<Timer> since ESPHome 2026.2)
+          const auto &timers = id(va).get_timers();
+          bool has_any = !timers.empty();
 
           // Choose the soonest ACTIVE timer; else the soonest overall
           bool has_active = false;
-          voice_assistant::Timer chosen = has_any ? timers.begin()->second : voice_assistant::Timer{};
+          voice_assistant::Timer chosen = has_any ? timers.front() : voice_assistant::Timer{};
           if (has_any) {
-            for (auto &kv : timers) {
-              const auto &t = kv.second;
+            for (const auto &t : timers) {
               if (t.is_active) {
                 if (!has_active || t.seconds_left <= chosen.seconds_left) {
                   chosen = t;
@@ -758,8 +790,7 @@ script:
               }
             }
             if (!has_active) {
-              for (auto &kv : timers) {
-                const auto &t = kv.second;
+              for (const auto &t : timers) {
                 if (t.seconds_left <= chosen.seconds_left) {
                   chosen = t;
                 }
@@ -783,7 +814,6 @@ script:
 
       
       - if:
-          # While listening: keep visible and at 100%; gradient already applied
           condition:
             lambda: 'return id(va_listening_glow);'
           then:
@@ -874,17 +904,16 @@ script:
       - delay: 50ms
 
   - id: check_dim
+    #dim after 2 min idle or change to home page after 30 second idle
     mode: queued
     then:
       - if:
           condition:
             and:
-              #- not: voice_assistant.is_running
               - lambda: 'return (millis() - id(last_active_ms)) > 120000;'
               - lambda: |-
-                  const auto timers = id(va).get_timers();
-                  for (auto &kv : timers) {
-                    const auto &t = kv.second;
+                  const auto &timers = id(va).get_timers();
+                  for (const auto &t : timers) {
                     if (t.is_active && t.seconds_left > 0) return false;
                   }
                   return true;
@@ -896,9 +925,16 @@ script:
             - light.turn_on:
                 id: screen_backlight
                 brightness: 40%
-            - logger.log: "DIMMER: All conditions met → setting brightness=40%"
+            #- logger.log: "DIMMER: All conditions met → setting brightness=40%"
           else:
-            - logger.log: "DIMMER: Not conditions met"
+            #- logger.log: "DIMMER: Not conditions met"
+      - if:
+          condition:
+            and:
+              - lambda: 'return (millis() - id(last_active_ms)) > 30000;'
+          then:
+            - lvgl.page.show:
+                id: main_page
 #pca9554:
 #  - id: 'pca9554a_device'
 #    address: 0x20
@@ -926,7 +962,6 @@ spi:
 display:
   - platform: qspi_dbi
     model: CUSTOM
-    rotation: 180
     data_rate: 10MHz
     id: main_display
     spi_id: display_qspi
@@ -1352,6 +1387,7 @@ display:
       - delay 120ms
 lvgl:
   page_wrap: true
+  rotation: 180
   pages:
     - id: main_page
       on_press:
@@ -1425,38 +1461,42 @@ lvgl:
             text: "-- W"
             text_font: montserrat_22
             text_color: 0x2196F3 
+        - label:
+            id: bin_label
+            align: CENTER
+            text_font: roboto_icons_40
+            text: ""
+            text_color: lime
+            y: -75
+            x: -80
 
         - label:
             id: shoppingcart_label
             align: CENTER
             text_font: roboto_icons_40
             text: "\U000F0110"
-            text_color: 0x006D5B
-            y: -105
-        
+            text_color: white
+            x: -20
+            y: -85       
         - label:
             id: shopping_label
             align: CENTER
-            x: 0
-            y: 12
+            y: 28
             text: "" 
             text_font: montserrat_26
             text_color: 0xffffff
-            height: 155
-            #width: 185
-            max_width: 180
+            height: 195
+            max_width: 223
             long_mode: SCROLL_CIRCULAR
-        - label:
-            align: CENTER
-            text_font: montserrat_26
-            text: "TV"
-            text_color: amber
-            x: 147
-            y: -25
+            bg_color: black
+            bg_opa: 50%
+            pad_all: 5
+            radius: 5
+
         - label:
             align: CENTER
             text_font: roboto_icons_40
-            text: "\U000F06E8"
+            text: "\U000F06E8"  #bulb icon
             text_color: amber
             x: 177
             y: -25
@@ -1466,8 +1506,8 @@ lvgl:
             max_width: 75
             width: 75
             height: 38
-            x: 169
-            y: 15
+            x: -160
+            y: 45
             on_value:
               then:
                 - if:
@@ -1478,16 +1518,11 @@ lvgl:
                           action: light.turn_on
                           data:
                             entity_id: ${right_switch}
-                            #entity_id: light.aqara_hub_892a_lightbulb_892a
                     else:
                       - homeassistant.action:
                           action: light.turn_off
                           data:
-                            #entity_id: light.aqara_hub_892a_lightbulb_892a
                             entity_id: ${right_switch}
-                - logger.log:
-                    format: "Switch state: %d"
-                    args: [ x ]
 
         #- label:
         #    id: thermometer
@@ -1518,12 +1553,21 @@ lvgl:
             text_color: 0xffffff
             width: 255
             long_mode: SCROLL_CIRCULAR
-            
+        - label:
+            id: price_label
+            align: CENTER
+            text_align: CENTER
+            y: 170
+            text: "..."
+            text_font: montserrat_22
+            text_color: 0xffffff
+            width: 255
+            long_mode: SCROLL_CIRCULAR            
 
         - label:
             id: timer_progress_text
             align: CENTER
-            y: 170
+            y: 180
             text: ""
             text_font: montserrat_44
             text_color: 0xffffff
@@ -1581,7 +1625,7 @@ lvgl:
             align: CENTER
             y: -160
             text: "\U000F075A"
-            text_font: roboto_icons_70
+            text_font: roboto_icons_80
             text_color: yellow
         - label:
             id: lbl_header
@@ -1590,24 +1634,24 @@ lvgl:
             text_align: CENTER
             text_font: montserrat_24
             text_color: 0xFFFFFF
-            y: -105
-
-        - label:
-            id: lbl_title
-            y: -30
-            pad_all: 25
-            width: 500
-            bg_opa: 40%
-            styles: box_style
-            text_font: montserrat_28
-            text: "Title: unknown"
-            long_mode: SCROLL_CIRCULAR
+            y: -40
+  # Commented out due to xiao ai speaker not supporting music assitant
+  #      - label:
+  #          id: lbl_title
+  #          y: -30
+  #          pad_all: 25
+  #          width: 500
+  #          bg_opa: 40%
+  #          styles: box_style
+  #          text_font: music_title_font
+  #          text: "Title: unknown"
+  #          long_mode: SCROLL_CIRCULAR
         
         - button:
             id: bm_prev
             text: "\U000F04AE"
-            text_font: roboto_icons_70
-            y: 70
+            text_font: roboto_icons_80
+            y: 60
             x: -110
             pad_left: 20
             pad_right: 20
@@ -1625,8 +1669,8 @@ lvgl:
         - button:
             id: bm_play
             text: "\U000F040A"
-            text_font: roboto_icons_70
-            y: 70
+            text_font: roboto_icons_80
+            y: 60
             width: 100
             height: 72
             pad_left: 25
@@ -1648,8 +1692,8 @@ lvgl:
         - button:
             id: btn_next
             text: "\U000F04AD"
-            text_font: roboto_icons_70
-            y: 70
+            text_font: roboto_icons_80
+            y: 60
             x: 110
             pad_left: 20
             pad_right: 20
@@ -1663,7 +1707,7 @@ lvgl:
             on_click:
               - lambda: |-
                   id(my_media_next).execute();
-    
+
   style_definitions:
     - id: box_style
       align: CENTER
@@ -1744,37 +1788,24 @@ text_sensor:
                 : std::string("\U000F040A");  // e.g., mdi-play
 
 
-  - platform: homeassistant
-    entity_id: media_player.${external_media_player}
-    id: ha_media_title
-    attribute: media_title
-    on_value:
-
-      then:
-        - lvgl.label.update:
-            id: lbl_title
-            text: !lambda |-
-              if (id(ha_media_title).has_state() && !id(ha_media_title).state.empty()) {
-                std::string t = id(ha_media_title).state;
-                std::transform(t.begin(), t.end(), t.begin(), ::toupper);
-                //return std::string("Title: ") + t;
-                return t;
-              } else {
-                return std::string("Title: unknown");
-              }
+#  - platform: homeassistant
+#    entity_id: media_player.${external_media_player}
+#    id: ha_media_title
+#    attribute: media_title
+#    on_value:
+#      then:
+#        - lvgl.label.update:
+#            id: lbl_title
+#            text: !lambda |-
+#              if (id(ha_media_title).has_state() && !id(ha_media_title).state.empty()) {
+#                std::string t = id(ha_media_title).state;
+#                std::transform(t.begin(), t.end(), t.begin(), ::toupper);
+#                return t;
+#              } else {
+#                return std::string("Title: unknown");
+#              }
 
 sensor:
-  - platform: homeassistant
-    id: ha_power_w
-    entity_id: ${left_sensor}
-    internal: true
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: power_value_lbl
-            text:
-              format: "%d W"
-              args: [ "(int) roundf(id(ha_power_w).state)" ]
    # Reports the WiFi signal strength/RSSI in dB
 
   - platform: wifi_signal
@@ -1802,7 +1833,6 @@ sensor:
               args: [ 'x' ]
 
   - platform: debug
-    
     free:
       name: "Heap Free"
       unit_of_measurement: kB
@@ -1822,6 +1852,17 @@ sensor:
       filters:
         - lambda: |-
             return x / 1000.0;
+  - platform: homeassistant
+    id: ha_power_w
+    entity_id: ${left_sensor}
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: power_value_lbl
+            text:
+              format: "%d W"
+              args: [ "(int) roundf(id(ha_power_w).state)" ]
 
 binary_sensor:
   - platform: homeassistant
@@ -1842,7 +1883,10 @@ globals:
     type: bool
     restore_value: "false"
     initial_value: "true"
-
+  - id: g_ota_in_progress
+    type: bool
+    restore_value: false
+    initial_value: "false"
   # True only during listening
   - id: va_listening_glow
     type: bool
@@ -1918,16 +1962,9 @@ globals:
     restore_value: yes
     initial_value: "0"
 
-  # Listening, phase text blinking
-  - id: va_blinking
-    type: bool
-    initial_value: "false"
-
   - id: va_blink_on
     type: bool
     initial_value: "false"
-
-
 
 # ESPHome text entity to hold the Shopping List string
 text:
@@ -1945,6 +1982,38 @@ text:
             text: !lambda |-
               return id(shopping_text).state.c_str();
         - lvgl.widget.redraw: shopping_label
+  - platform: template
+    id: bin_text
+    name: "Bin list"
+    mode: text
+    restore_value: false
+    optimistic: true
+    # Whenever HA sets a new value, update the LVGL label
+
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: bin_label
+            text: !lambda |-
+              std::string msg = id(bin_text).state;
+
+              if (msg == "Garden Bin") {
+                return "\U000F01B4";
+              } else if (msg == "Recycle") {
+                return "\U000F044C";
+              } else {
+                return "";
+              }
+            text_color: !lambda |-
+              std::string msg = id(bin_text).state;
+
+              if (msg == "Garden Bin") {
+                return lime;
+              } else if (msg == "Recycle") {
+                return yellow;
+              } 
+        #text_color
+        - lvgl.widget.redraw: bin_label
 
 color:
   - id: active_timer_color
@@ -1986,6 +2055,7 @@ font:
           "\U000F05D4", # mdi-airplane-landing
           "\U000F0076", #shopping basket
           "\U000F0110", #shopping cart
+          "\U000F044C", # recycle bin
           "\U000F07D1", # HA-house with wifi
           "\U000F1A35",   # HA offline
           "\U000F16BD", #wifi connected
@@ -2003,6 +2073,9 @@ font:
           "\U000F02D1", # mdi-heart
           "\U000F0076", #shopping basket
           "\U000F0110", #shopping cart
+          "\U000F01B4", # bin
+          "\U000F032A", #leaf
+          "\U000F044C", # recycle bin
           "\U000F07D1", # HA-house with wifi
           "\U000F1A35",   # HA offline
           "\U000F16BD", #wifi connected
@@ -2018,8 +2091,8 @@ font:
           "\U000F075A"#music
           ]
   - file: "gfonts://Roboto+Condensed"
-    id: roboto_icons_70
-    size: 70
+    id: roboto_icons_80
+    size: 80
     bpp: 4
     extras:
       - file: "https://github.com/chickymonkey/esphome/raw/refs/heads/main/font/materialdesignicons-webfont.ttf"
@@ -2027,10 +2100,20 @@ font:
           "\U000F03E4", #pause
           "\U000F040A", #play
           "\U000F040E", #play/pause
-          "\U000F04AD",#next track
+          "\U000F04AD", #next track
           "\U000F04AE", #previous track
-          "\U000F075A"#music
+          "\U000F075A", #music
+          "\U000F0110", #shopping cart
+          "\U000F01B4", # bin
+          "\U000F044C", # recycle bin
           ]
+  - file: ${cn_font}
+    id: music_title_font
+    size: 26
+    glyphs:
+      - " []()+=,-_.:!@*{}`|°~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+      - "。，“”王力宏花田错歌之海枯石烂一直很安静路上有你首简单的下沙游鸿明不要对他说张信哲中国话为写诗亚瑟小子爱我莫文蔚传奇在知道事是心内承诺背包仰倔强别怕伤十年陈奕迅吴克群残废周华健没会让想起因情墨尔本晴夜曲杰伦大城太早孤勇者宽容富士山就陶喆屋顶布兰妮英版美少女祈祷希望广岛恋庐州月许嵩真学友碎了无痕和去吹风敬轩吻得逼韶涵亲那彩虹天堂往後余生貳浪徐誉滕使翅膀跳忠孝东走九遍快乐崇拜忽然间多后悔配们好都样麦受手放开拥抱拯救改变自己断点赖曹格叛李圣痴绝楼个人江南林俊么清雨温柔五雪演员薛谦如潮水转移独家记忆唯场戏梦存以活男洋白光足突等分钟红玫瑰老与落叶归根蓝色解脱谎贾斯汀越纯幸福过火遇见孙燕姿什浮夸绮贞旅行意义丽镇姑娘找暗蝴蝶晶莹委屈预感黑柳丁龙能秘密吗亭序园时机第七章最长电影枫烟圈易冷甜祝日稻香给蒲公约定呢超飞跨代整青瓷毛衣做两森难依舍罪当忘卡片钥匙动求留用疼些音阴抗拒颜迈逊冰万练习缠绵千理由毒珍贵偷別她来听唱果这算刀割到书儿也谢呼吸痛气可惜三星杜伟跟辈杨嬅瓶座柴盐酱醋茶梁咏琪价孟婆汤灰象葬礼滴泪素煌袁惟仁醒旭浆条退春瘤菌团荆棘鱼眼豆齐井庾澄庆泥地出而看发成只把还作种总从面但现前所同又方期它头经位名法世次身被高已其进此常正问几特外孩相西将实向声车全重工物每并打新比才便夫再部像体却加主界门利表先口死性马或住教命结更拉神处母父应字平报关至认接告入笑军候民岁何度觉带边叫任金原吃妈通师立数四失满战远轻目病始达深完今提化空业思切怎非罗钱语元喜曾离科干流欢各即指合反题必该论交终请医晚制球决画保读运及则房院量苦品近坐产答精视连司巴管类未朋且婚台北队久乎观尽形爸百令吧识步术市半热送兴造谈极随收讲式取照办古拿计您装似双妻尼诉米称客领节站刻统故历惊脸选紧争另建维树系示愿持史准联妇纪基买志阿"
+     
 image:
   - file: ${bg_img}
     id: round_bg
@@ -2040,4 +2123,3 @@ image:
     id: music_round_bg
     type: RGB565    # good balance of quality & size
     resize: 412x412
-#music_bg_img
