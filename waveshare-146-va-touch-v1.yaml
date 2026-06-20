@@ -994,9 +994,10 @@ display:
     draw_rounding: 4  
     init_sequence:
       - [0xFF, 0x20, 0x10, 0x00]
-      #- [0x36, 0xC0] # 180 rotation fix?
       - [0x11, 0x00]
       - delay 120ms
+      - [0x29, 0x00]   # ← Display ON — critical!
+      - delay 20ms
 lvgl:
   page_wrap: true
   rotation: 180
