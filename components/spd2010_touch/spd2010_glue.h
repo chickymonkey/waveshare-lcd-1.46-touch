@@ -24,7 +24,9 @@ class Spd2010LvglGlue : public Component {
   void set_mirror_y(bool b) { mirror_y_ = b; }
   void set_int_gpio(int gpio) { int_gpio_ = gpio; }
   // Inject the ESPHome `i2c:` bus configured in YAML (must be an esp-idf bus,
-  // i.e. declared via the `i2c:` component on esp-idf framework).
+  // i.e. declared via the `i2c:` component on esp-idf framework). We don't get a
+  // raw handle from it directly (ESPHome doesn't expose one); instead we use its
+  // port number to look the handle up via i2c_master_get_bus_handle() in begin().
   void set_i2c_bus(i2c::I2CBus *bus) { i2c_bus_component_ = static_cast<i2c::IDFI2CBus *>(bus); }
 
   void setup() override;
