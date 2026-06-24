@@ -954,27 +954,20 @@ spi:
   interface: spi2
   data_pins: [GPIO46, GPIO45, GPIO42, GPIO41]
 
-#i2c:
-#  sda: GPIO11
-#  scl: GPIO10
-#  scan: true
-  #frequency: 50kHz
-  #timeout: 1000ms
+pca9554:
+  - id: 'pca9554a_device'
+    address: 0x20  
 
-
-#pca9554:
-#  - id: 'pca9554a_device'
-#    address: 0x20  
-
-#i2c:
-#  - id: bus_imu_touch_rtc
-#    sda: GPIO11
-#    scl: GPIO10
-#    frequency: 400kHz
+i2c:
+  - id: bus_imu_touch_rtc
+    sda: GPIO11
+    scl: GPIO10
+    frequency: 50kHz
+    timeout: 1000ms
 
 spd2010_touch:
   id: spd2010_touch_driver
-#  #i2c_id: bus_imu_touch_rtc
+  i2c_id: bus_imu_touch_rtc
   width: 412
   height: 412
   int_gpio: 4       # plain integer; we handle GPIO internally
@@ -994,7 +987,10 @@ display:
       height: 412
       width: 412
     cs_pin: GPIO21
-    reset_pin: GPIO3 
+    #reset_pin: GPIO3
+    reset_pin: 
+      pca9554: pca9554a_device
+      number: 1  
     auto_clear_enabled: false
     update_interval: 120ms
     spi_mode: 0
@@ -1801,6 +1797,23 @@ text_sensor:
                 ? std::string("\U000F03E4")   // e.g., mdi-pause
                 : std::string("\U000F040A");  // e.g., mdi-play
 
+
+#  - platform: homeassistant
+#    entity_id: media_player.${external_media_player}
+#    id: ha_media_title
+#    attribute: media_title
+#    on_value:
+#      then:
+#        - lvgl.label.update:
+#            id: lbl_title
+#            text: !lambda |-
+#              if (id(ha_media_title).has_state() && !id(ha_media_title).state.empty()) {
+#                std::string t = id(ha_media_title).state;
+#                std::transform(t.begin(), t.end(), t.begin(), ::toupper);
+#                return t;
+#              } else {
+#                return std::string("Title: unknown");
+#              }
 
 sensor:
    # Reports the WiFi signal strength/RSSI in dB
