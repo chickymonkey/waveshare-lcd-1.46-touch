@@ -1,6 +1,7 @@
 
 #pragma once
 #include "esphome/core/component.h"
+#include "esphome/components/i2c/i2c_bus_esp_idf.h"
 #include "sdkconfig.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
@@ -22,6 +23,9 @@ class Spd2010LvglGlue : public Component {
   void set_mirror_x(bool b) { mirror_x_ = b; }
   void set_mirror_y(bool b) { mirror_y_ = b; }
   void set_int_gpio(int gpio) { int_gpio_ = gpio; }
+  // Inject the ESPHome `i2c:` bus configured in YAML (must be an esp-idf bus,
+  // i.e. declared via the `i2c:` component on esp-idf framework).
+  void set_i2c_bus(i2c::I2CBus *bus) { i2c_bus_component_ = static_cast<i2c::IDFI2CBus *>(bus); }
 
   void setup() override;
   void dump_config() override;
@@ -49,6 +53,10 @@ class Spd2010LvglGlue : public Component {
   i2c_master_bus_handle_t i2c_bus_{nullptr};
   esp_lcd_panel_io_handle_t io_{nullptr};
   esp_lcd_touch_handle_t tp_{nullptr};
+
+  // ESPHome-managed i2c bus (set via set_i2c_bus / YAML `i2c_id`); we pull the
+  // underlying IDF i2c_master_bus_handle_t from this instead of creating our own bus.
+  i2c::IDFI2CBus *i2c_bus_component_{nullptr};
 
   // Optional PCA9554 device handle (new I2C master driver)
   i2c_master_dev_handle_t pca_dev_{nullptr};
