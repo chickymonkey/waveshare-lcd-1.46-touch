@@ -203,9 +203,15 @@ void Spd2010LvglGlue::begin() {
     ESP_LOGE(TAG, "No i2c bus configured (set i2c_id in YAML).");
     return;
   }
-  i2c_master_bus_handle_t i2c_bus = this->i2c_bus_component_->get_bus_handle();
-  if (i2c_bus == nullptr) {
-    ESP_LOGE(TAG, "i2c bus handle is null; is the `i2c:` component using esp-idf framework?");
+  // ESPHome's IDFI2CBus doesn't expose its i2c_master_bus_handle_t directly, but it
+  // does expose the port number it installed itself on. Once the `i2c:` component has
+  // run its own setup() (it has, by the time on_boot/begin() runs), we can ask the IDF
+  // driver for the handle that's already associated with that port.
+  i2c_master_bus_handle_t i2c_bus = nullptr;
+  esp_err_t bus_err = i2c_master_get_bus_handle(
+      (i2c_port_num_t)this->i2c_bus_component_->get_port(), &i2c_bus);
+  if (bus_err != ESP_OK || i2c_bus == nullptr) {
+    ESP_LOGE(TAG, "i2c_master_get_bus_handle failed: %d. Is the `i2c:` component using esp-idf framework and set up before this?", (int)bus_err);
     return;
   }
 
