@@ -198,18 +198,14 @@ esp_err_t post_read_irq_service_(i2c_master_dev_handle_t dev, bool *cleared) {
 void Spd2010LvglGlue::begin() {
   if (started_) { ESP_LOGI(TAG, "Touch already started; skipping."); return; }
 
-  // --- New I²C master bus API (IDF 5.x) ---
-  i2c_master_bus_config_t bus_cfg{};
-  bus_cfg.clk_source = I2C_CLK_SRC_DEFAULT;
-  bus_cfg.i2c_port   = I2C_NUM_0;
-  bus_cfg.sda_io_num = (gpio_num_t)11;   // GPIO11
-  bus_cfg.scl_io_num = (gpio_num_t)10;   // GPIO10
-  bus_cfg.flags.enable_internal_pullup = true;
-
-  i2c_master_bus_handle_t i2c_bus = nullptr;
-  esp_err_t err = i2c_new_master_bus(&bus_cfg, &i2c_bus);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "i2c_new_master_bus failed: %d", (int)err);
+  // --- Reuse the I2C bus owned by ESPHome's `i2c:` component (esp-idf new master driver) ---
+  if (this->i2c_bus_component_ == nullptr) {
+    ESP_LOGE(TAG, "No i2c bus configured (set i2c_id in YAML).");
+    return;
+  }
+  i2c_master_bus_handle_t i2c_bus = this->i2c_bus_component_->get_bus_handle();
+  if (i2c_bus == nullptr) {
+    ESP_LOGE(TAG, "i2c bus handle is null; is the `i2c:` component using esp-idf framework?");
     return;
   }
 
@@ -233,7 +229,7 @@ void Spd2010LvglGlue::begin() {
   io_cfg.lcd_cmd_bits = 8;
   io_cfg.lcd_param_bits = 8;
 
-  err = esp_lcd_new_panel_io_i2c(i2c_bus, &io_cfg, &io);
+  esp_err_t err = esp_lcd_new_panel_io_i2c(i2c_bus, &io_cfg, &io);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "esp_lcd_new_panel_io_i2c failed: %d", (int)err);
     return;
