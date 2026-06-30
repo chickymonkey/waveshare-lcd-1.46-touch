@@ -6,11 +6,13 @@ This project is for esphome, download the three files in components/spd2010_touc
 Added external component spd2010_touch, which glues the official lcd_touch driver and lcd_touch_spd2010.
 
 ## Functions
-- Voice assistant
-- LCD screen showing shoppint list active items
+- Voice assistant ( potentially to add items onto the shopping list, control media player)
+- shoppint list active items
 - Showing home current energy (needs your own sensor)
 - Switch for a light, or any light
 - Touch screen function for lvgl.
+- Media page and main page switch by swipping left or right
+- Accellerator sensor (potentially can be used to switch pages or control volume ?)
 
 ## Shopping list
 My device works as a fridge magenet, so I put shopping list in the middle.
@@ -53,5 +55,5 @@ mode: single
 </p>
 ##### Media page
 <p align="center">
-  <img src="Final_ui.png" width="65%">
+  <img src="Final_media_player.png" width="65%">
 </p>
