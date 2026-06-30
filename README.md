@@ -49,11 +49,18 @@ actions:
 mode: single
 ```
 ## Preview
-##### Main page
+
 <p align="center">
-  <img src="Final_ui.png" width="65%">
+  <img src="image/Final_ui.png" width="65%">
 </p>
-##### Media page
+
 <p align="center">
-  <img src="Final_media_player.png" width="65%">
+  <img src="image/Final_media_player.png" width="65%">
+</p>
+
+<p align="center">
+  <img src="image/Final_timer.png" width="65%">
+</p>
+<p align="center">
+  <img src="image/ha_device.png" width="65%">
 </p>
