@@ -2,6 +2,8 @@
 # avoid screen swap when Voice assistant, or timer is active.
 # Response and shopping list scroll when content is longer than it's label size
 # v1.2 touch integrated with spd2010_glue component
+# v1.3 added accel loaded via on_boot
+
 #media_player.xiao_ai_yin_xiang_9318
 ---
 substitutions:
@@ -34,6 +36,36 @@ esphome:
         - delay: 300ms
         - lambda: |-
             id(spd2010_touch_driver).begin();
+        - lambda: |- # gyroscope
+            ESP_LOGI("QMI8658", "Initializing...");
+
+            // WHO_AM_I check
+            uint8_t whoami_reg = 0x00;
+            uint8_t whoami = 0;
+            if (id(bus_imu_touch_rtc)->write_readv(0x6B, &whoami_reg, 1, &whoami, 1) == i2c::ERROR_OK) {
+              ESP_LOGI("QMI8658", "WHO_AM_I = 0x%02X (expect 0x05)", whoami);
+            } else {
+              ESP_LOGE("QMI8658", "WHO_AM_I read failed - check wiring/address");
+            }
+
+            // CTRL1: interface config (auto-increment, INT active-high push-pull)
+            uint8_t ctrl1[] = {0x02, 0x60};
+            id(bus_imu_touch_rtc)->write(0x6B, ctrl1, 2);
+
+            // CTRL2: accel ±2g, 125Hz ODR
+            uint8_t ctrl2[] = {0x03, 0x04};
+            id(bus_imu_touch_rtc)->write(0x6B, ctrl2, 2);
+
+            // CTRL3: gyro ±512dps, 125Hz ODR  
+            uint8_t ctrl3[] = {0x04, 0x54};
+            id(bus_imu_touch_rtc)->write(0x6B, ctrl3, 2);
+
+            // CTRL7: enable accel + gyro
+            uint8_t ctrl7[] = {0x08, 0x03};
+            id(bus_imu_touch_rtc)->write(0x6B, ctrl7, 2);
+
+            ESP_LOGI("QMI8658", "Init complete");
+  
         
 esp32:
   board: esp32-s3-devkitc-1
@@ -1873,7 +1905,42 @@ sensor:
             text:
               format: "%d W"
               args: [ "(int) roundf(id(ha_power_w).state)" ]
+  #accelerometer 
+  - platform: template
+    name: "Accel X"
+    id: accel_x
+    unit_of_measurement: "g"
+    accuracy_decimals: 2
+    update_interval: 500ms
+    internal: true
+    lambda: |-
+      uint8_t reg = 0x35;   // Accel X LSB
+      uint8_t data[2];
+      if (id(bus_imu_touch_rtc)->write_readv(0x6B, &reg, 1, data, 2) != i2c::ERROR_OK)
+        return NAN;
 
+      int16_t raw = (int16_t)((data[1] << 8) | data[0]);
+
+      // ±2g scale
+      return raw / 16384.0;
+
+  - platform: template
+    name: "Accel Y"
+    id: accel_y
+    unit_of_measurement: "g"
+    accuracy_decimals: 2
+    update_interval: 400ms
+    internal: true
+    lambda: |-
+      uint8_t reg = 0x37;   // Accel Y LSB
+      uint8_t data[2];
+      if (id(bus_imu_touch_rtc)->write_readv(0x6B, &reg, 1, data, 2) != i2c::ERROR_OK)
+        return NAN;
+
+      int16_t raw = (int16_t)((data[1] << 8) | data[0]);
+
+      // ±2g scale
+      return raw / 16384.0;
 binary_sensor:
   - platform: homeassistant
     id: ha_nightlight_state
