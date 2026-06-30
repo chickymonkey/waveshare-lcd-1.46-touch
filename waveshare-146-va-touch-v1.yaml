@@ -2,9 +2,8 @@
 # avoid screen swap when Voice assistant, or timer is active.
 # Response and shopping list scroll when content is longer than it's label size
 # v1.2 touch integrated with spd2010_glue component
-# v1.3 added accel loaded via on_boot
-
-#media_player.xiao_ai_yin_xiang_9318
+# v1.3 added QMI8658 accelerator driver as external component
+# add ota password as ota_key to your secrets setting.
 ---
 substitutions:
   #bg_img: /config/esphome/images/default/waveshare_bg_tp420.jpg
@@ -23,7 +22,6 @@ esphome:
   on_boot:
     - priority: 600
       then:
-
         - delay: 15s
         - script.execute: draw_display
         - media_player.speaker.play_on_device_media_file:
@@ -36,37 +34,7 @@ esphome:
         - delay: 300ms
         - lambda: |-
             id(spd2010_touch_driver).begin();
-        - lambda: |- # gyroscope
-            ESP_LOGI("QMI8658", "Initializing...");
-
-            // WHO_AM_I check
-            uint8_t whoami_reg = 0x00;
-            uint8_t whoami = 0;
-            if (id(bus_imu_touch_rtc)->write_readv(0x6B, &whoami_reg, 1, &whoami, 1) == i2c::ERROR_OK) {
-              ESP_LOGI("QMI8658", "WHO_AM_I = 0x%02X (expect 0x05)", whoami);
-            } else {
-              ESP_LOGE("QMI8658", "WHO_AM_I read failed - check wiring/address");
-            }
-
-            // CTRL1: interface config (auto-increment, INT active-high push-pull)
-            uint8_t ctrl1[] = {0x02, 0x60};
-            id(bus_imu_touch_rtc)->write(0x6B, ctrl1, 2);
-
-            // CTRL2: accel ±2g, 125Hz ODR
-            uint8_t ctrl2[] = {0x03, 0x04};
-            id(bus_imu_touch_rtc)->write(0x6B, ctrl2, 2);
-
-            // CTRL3: gyro ±512dps, 125Hz ODR  
-            uint8_t ctrl3[] = {0x04, 0x54};
-            id(bus_imu_touch_rtc)->write(0x6B, ctrl3, 2);
-
-            // CTRL7: enable accel + gyro
-            uint8_t ctrl7[] = {0x08, 0x03};
-            id(bus_imu_touch_rtc)->write(0x6B, ctrl7, 2);
-
-            ESP_LOGI("QMI8658", "Init complete");
   
-        
 esp32:
   board: esp32-s3-devkitc-1
   variant: esp32s3
@@ -102,33 +70,35 @@ logger:
     select: INFO
     light: INFO
     lvgl: INFO
-    display: DEBUG
+    display: WARN
     speaker: WARN
     microphone: WARN
     audio: WARN
     micro_wake_word: WARN
     voice_assistant: WARN
     media_player: WARN
-    spd2010_glue: WARN
+    spd2010_touch: WARN
+    binary_sensor: WARN
 api:
   encryption:
     key: !secret api_key
   on_client_connected:
     then:
-      - delay: 1.5s
-      - script.execute: update_timer_progress_arc
+      - delay: 2s
+      - script.execute: update_timer_progress_arc #draw timer if there is one.
       - script.execute: draw_display
+
 #used to check free ram, cpu.
 debug:
-  update_interval: 60s
+  update_interval: 90s
 
 ota:
   - platform: esphome
-    password: "1554a3a8fd1fa8d97307d74f21aa9fde"
+    password: !secret ota_key
 
     on_begin:
       - logger.log:
-          level: INFO
+          level: WARN
           tag: ota
           format: "OTA begin: loop watchdog suspended, pausing full audio runtime and LVGL"
       - globals.set:
@@ -145,14 +115,21 @@ wifi:
 
 captive_portal:
 
-
-
 external_components:
-  - source: components #  Use this for local developement
+  #- source: components #  Use this for local developement
   - source: github://chickymonkey/waveshare-lcd-1.46-touch
     components: [spd2010_touch]
-    refresh: 20s
+    refresh: 1h
 
+  - source: github://chickymonkey/QMI8658-Esphome
+    components: [qmi8658]
+    refresh: 1h
+    
+  #below PR is to fix color issue, can be removed once after July 2026 esphome 
+#  - source: github://pr#17176
+#    components: [mipi, mipi_spi]
+#    refresh: 1h
+    
 time:
   - platform: homeassistant
     on_time:
@@ -173,6 +150,69 @@ interval:
     then:
       - script.execute: check_dim
 
+  - interval: 200ms #music visualizer
+    then:
+      - if:
+          condition:
+            lambda: 'return id(ha_media_status).state == "playing";'
+          then:
+            - lambda: |-
+                id(vis_phase) = (id(vis_phase) + 1) % 4;
+            - lvgl.bar.update:
+                id: music_vis_1
+                value: !lambda |-
+                  // Wave pattern offset by phase
+                  const int wave[4][4] = {
+                    {95, 40, 20, 60},
+                    {60, 95, 40, 20},
+                    {20, 60, 95, 40},
+                    {40, 20, 60, 95}
+                  };
+                  return wave[id(vis_phase)][0];
+            - lvgl.bar.update:
+                id: music_vis_2
+                value: !lambda |-
+                  const int wave[4][4] = {
+                    {80, 40, 20, 60},
+                    {60, 80, 40, 20},
+                    {20, 60, 80, 40},
+                    {40, 20, 60, 80}
+                  };
+                  return wave[id(vis_phase)][1];
+            - lvgl.bar.update:
+                id: music_vis_3
+                value: !lambda |-
+                  const int wave[4][4] = {
+                    {95, 40, 20, 60},
+                    {60, 95, 40, 20},
+                    {20, 60, 95, 40},
+                    {40, 20, 60, 95}
+                  };
+                  return wave[id(vis_phase)][2];
+            - lvgl.bar.update:
+                id: music_vis_4
+                value: !lambda |-
+                  const int wave[4][4] = {
+                    {90, 40, 20, 60},
+                    {60, 90, 40, 20},
+                    {20, 60, 90, 40},
+                    {40, 20, 60, 90}
+                  };
+                  return wave[id(vis_phase)][3];
+          else:
+            # Reset bars to flat when not playing
+            - lvgl.bar.update:
+                id: music_vis_1
+                value: 0
+            - lvgl.bar.update:
+                id: music_vis_2
+                value: 0
+            - lvgl.bar.update:
+                id: music_vis_3
+                value: 0
+            - lvgl.bar.update:
+                id: music_vis_4
+                value: 0
 network:
   enable_high_performance: false
 psram:
@@ -402,10 +442,17 @@ voice_assistant:
   on_timer_updated:
     - script.execute: update_timer_progress_arc
     - script.execute: draw_display
+    - lvgl.widget.update:
+        id: timer_progress_arc
+        hidden: false
   on_timer_tick:
     - script.execute: update_timer_progress_arc
+    - lvgl.widget.update:
+        id: timer_progress_arc
+        hidden: false
     - script.execute: draw_display
     - text_sensor.template.publish: { id: text_response, state: "" }
+    
   on_timer_finished:
     - script.execute: update_timer_progress_arc
     - switch.turn_on: timer_ringing
@@ -592,7 +639,6 @@ script:
                 format: "MWW: safe start"
           else:
             - logger.log:
-                level: INFO
                 tag: mww
                 format: "MWW: safe start skipped init=%d ota=%d mute=%d va=%d mww=%d announcing=%d"
                 args:
@@ -842,7 +888,6 @@ script:
           id(timer_progress_percent) = pct;
           id(timer_progress_has_timer) = has_any;
           id(timer_progress_seconds_left) = has_any ? (int) chosen.seconds_left : 0;
-
       
       - if:
           condition:
@@ -956,7 +1001,6 @@ script:
             - light.turn_on:
                 id: screen_backlight
                 brightness: 40%
-            #- logger.log: "DIMMER: All conditions met → setting brightness=40%"
           else:
             #- logger.log: "DIMMER: Not conditions met"
       - if:
@@ -966,7 +1010,7 @@ script:
           then:
             - lvgl.page.show:
                 id: main_page
-
+        
 output:
   - platform: ledc
     pin: GPIO5
@@ -994,9 +1038,14 @@ i2c:
   - id: bus_imu_touch_rtc
     sda: GPIO11
     scl: GPIO10
-    frequency: 50kHz
-    timeout: 1000ms
-
+    #frequency: 50kHz
+    #timeout: 1000ms
+qmi8658: #External component
+  - id: qmi8658_imu
+    i2c_id: bus_imu_touch_rtc
+    address: 0x6B
+    update_interval: 500ms
+    
 spd2010_touch:
   id: spd2010_touch_driver
   i2c_id: bus_imu_touch_rtc
@@ -1008,9 +1057,10 @@ spd2010_touch:
   mirror_y: true
 
 display:
-  - platform: qspi_dbi
+  - platform: mipi_spi
     model: CUSTOM
-    data_rate: 10MHz
+    bus_mode: quad
+    data_rate: 40MHz
     id: main_display
     spi_id: display_qspi
     color_order: rgb
@@ -1020,419 +1070,419 @@ display:
       width: 412
     cs_pin: GPIO21
     #reset_pin: GPIO3
-    reset_pin: 
+    reset_pin:
       pca9554: pca9554a_device
-      number: 1  
-    auto_clear_enabled: false
-    update_interval: 120ms
-    spi_mode: 0
-    draw_rounding: 4  
+      number: 1
+    spi_mode: MODE0
+    draw_rounding: 4
+    use_axis_flips: true # used if lvgl is rotated 180
+    #ignore_init_sequence_conflicts: true # allow 0x3A/0x36 bank registers in the init sequence
     init_sequence:
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0x36, 0x00]
-      - [ 0x3A, 0x55]
-      - [ 0xFF, 0x20, 0x10, 0x10]
-      - [ 0x0C, 0x11]
-      - [ 0x10, 0x02]
-      - [ 0x11, 0x11]
-      - [ 0x15, 0x42]
-      - [ 0x16, 0x11]
-      - [ 0x1A, 0x02]
-      - [ 0x1B, 0x11]
-      - [ 0x61, 0x80]
-      - [ 0x62, 0x80]
-      - [ 0x54, 0x44]
-      - [ 0x58, 0x88]
-      - [ 0x5C, 0xcc]
-      - [ 0xFF, 0x20, 0x10, 0x10]
-      - [ 0x20, 0x80]
-      - [ 0x21, 0x81]
-      - [ 0x22, 0x31]
-      - [ 0x23, 0x20]
-      - [ 0x24, 0x11]
-      - [ 0x25, 0x11]
-      - [ 0x26, 0x12]
-      - [ 0x27, 0x12]
-      - [ 0x30, 0x80]
-      - [ 0x31, 0x81]
-      - [ 0x32, 0x31]
-      - [ 0x33, 0x20]
-      - [ 0x34, 0x11]
-      - [ 0x35, 0x11]
-      - [ 0x36, 0x12]
-      - [ 0x37, 0x12]
-      - [ 0xFF, 0x20, 0x10, 0x10]
-      - [ 0x41, 0x11]
-      - [ 0x42, 0x22]
-      - [ 0x43, 0x33]
-      - [ 0x49, 0x11]
-      - [ 0x4A, 0x22]
-      - [ 0x4B, 0x33]
-      - [ 0xFF, 0x20, 0x10, 0x15]
-      - [ 0x00, 0x00]
-      - [ 0x01, 0x00]
-      - [ 0x02, 0x00]
-      - [ 0x03, 0x00]
-      - [ 0x04, 0x10]
-      - [ 0x05, 0x0C]
-      - [ 0x06, 0x23]
-      - [ 0x07, 0x22]
-      - [ 0x08, 0x21]
-      - [ 0x09, 0x20]
-      - [ 0x0A, 0x33]
-      - [ 0x0B, 0x32]
-      - [ 0x0C, 0x34]
-      - [ 0x0D, 0x35]
-      - [ 0x0E, 0x01]
-      - [ 0x0F, 0x01]
-      - [ 0x20, 0x00]
-      - [ 0x21, 0x00]
-      - [ 0x22, 0x00]
-      - [ 0x23, 0x00]
-      - [ 0x24, 0x0C]
-      - [ 0x25, 0x10]
-      - [ 0x26, 0x20]
-      - [ 0x27, 0x21]
-      - [ 0x28, 0x22]
-      - [ 0x29, 0x23]
-      - [ 0x2A, 0x33]
-      - [ 0x2B, 0x32]
-      - [ 0x2C, 0x34]
-      - [ 0x2D, 0x35]
-      - [ 0x2E, 0x01]
-      - [ 0x2F, 0x01]
-      - [ 0xFF, 0x20, 0x10, 0x16]
-      - [ 0x00, 0x00]
-      - [ 0x01, 0x00]
-      - [ 0x02, 0x00]
-      - [ 0x03, 0x00]
-      - [ 0x04, 0x08]
-      - [ 0x05, 0x04]
-      - [ 0x06, 0x19]
-      - [ 0x07, 0x18]
-      - [ 0x08, 0x17]
-      - [ 0x09, 0x16]
-      - [ 0x0A, 0x33]
-      - [ 0x0B, 0x32]
-      - [ 0x0C, 0x34]
-      - [ 0x0D, 0x35]
-      - [ 0x0E, 0x01]
-      - [ 0x0F, 0x01]
-      - [ 0x20, 0x00]
-      - [ 0x21, 0x00]
-      - [ 0x22, 0x00]
-      - [ 0x23, 0x00]
-      - [ 0x24, 0x04]
-      - [ 0x25, 0x08]
-      - [ 0x26, 0x16]
-      - [ 0x27, 0x17]
-      - [ 0x28, 0x18]
-      - [ 0x29, 0x19]
-      - [ 0x2A, 0x33]
-      - [ 0x2B, 0x32]
-      - [ 0x2C, 0x34]
-      - [ 0x2D, 0x35]
-      - [ 0x2E, 0x01]
-      - [ 0x2F, 0x01]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x00, 0x99]
-      - [ 0x2A, 0x28]
-      - [ 0x2B, 0x0f]
-      - [ 0x2C, 0x16]
-      - [ 0x2D, 0x28]
-      - [ 0x2E, 0x0f]
-      - [ 0xFF, 0x20, 0x10, 0xA0]
-      - [ 0x08, 0xdc]
-      - [ 0xFF, 0x20, 0x10, 0x45]
-      - [ 0x01, 0x9C]
-      - [ 0x03, 0x9C]
-      - [ 0xFF, 0x20, 0x10, 0x42]
-      - [ 0x05, 0x2c]
-      - [ 0xFF, 0x20, 0x10, 0x11]
-      - [ 0x50, 0x01]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0x2A, 0x00, 0x00, 0x01, 0x9B]
-      - [ 0x2B, 0x00, 0x00, 0x01, 0x9B]
-      - [ 0xFF, 0x20, 0x10, 0x40]
-      - [ 0x86, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x0D, 0x66]
-      - [ 0xFF, 0x20, 0x10, 0x17]
-      - [ 0x39, 0x3c]
-      - [ 0xff, 0x20, 0x10, 0x31]
-      - [ 0x38, 0x03]
-      - [ 0x39, 0xf0]
-      - [ 0x36, 0x03]
-      - [ 0x37, 0xe8]
-      - [ 0x34, 0x03]
-      - [ 0x35, 0xCF]
-      - [ 0x32, 0x03]
-      - [ 0x33, 0xBA]
-      - [ 0x30, 0x03]
-      - [ 0x31, 0xA2]
-      - [ 0x2e, 0x03]
-      - [ 0x2f, 0x95]
-      - [ 0x2c, 0x03]
-      - [ 0x2d, 0x7e]
-      - [ 0x2a, 0x03]
-      - [ 0x2b, 0x62]
-      - [ 0x28, 0x03]
-      - [ 0x29, 0x44]
-      - [ 0x26, 0x02]
-      - [ 0x27, 0xfc]
-      - [ 0x24, 0x02]
-      - [ 0x25, 0xd0]
-      - [ 0x22, 0x02]
-      - [ 0x23, 0x98]
-      - [ 0x20, 0x02]
-      - [ 0x21, 0x6f]
-      - [ 0x1e, 0x02]
-      - [ 0x1f, 0x32]
-      - [ 0x1c, 0x01]
-      - [ 0x1d, 0xf6]
-      - [ 0x1a, 0x01]
-      - [ 0x1b, 0xb8]
-      - [ 0x18, 0x01]
-      - [ 0x19, 0x6E]
-      - [ 0x16, 0x01]
-      - [ 0x17, 0x41]
-      - [ 0x14, 0x00]
-      - [ 0x15, 0xfd]
-      - [ 0x12, 0x00]
-      - [ 0x13, 0xCf]
-      - [ 0x10, 0x00]
-      - [ 0x11, 0x98]
-      - [ 0x0e, 0x00]
-      - [ 0x0f, 0x89]
-      - [ 0x0c, 0x00]
-      - [ 0x0d, 0x79]
-      - [ 0x0a, 0x00]
-      - [ 0x0b, 0x67]
-      - [ 0x08, 0x00]
-      - [ 0x09, 0x55]
-      - [ 0x06, 0x00]
-      - [ 0x07, 0x3F]
-      - [ 0x04, 0x00]
-      - [ 0x05, 0x28]
-      - [ 0x02, 0x00]
-      - [ 0x03, 0x0E]
-      - [ 0xff, 0x20, 0x10, 0x00]
-      - [ 0xff, 0x20, 0x10, 0x32]
-      - [ 0x38, 0x03]
-      - [ 0x39, 0xf0]
-      - [ 0x36, 0x03]
-      - [ 0x37, 0xe8]
-      - [ 0x34, 0x03]
-      - [ 0x35, 0xCF]
-      - [ 0x32, 0x03]
-      - [ 0x33, 0xBA]
-      - [ 0x30, 0x03]
-      - [ 0x31, 0xA2]
-      - [ 0x2e, 0x03]
-      - [ 0x2f, 0x95]
-      - [ 0x2c, 0x03]
-      - [ 0x2d, 0x7e]
-      - [ 0x2a, 0x03]
-      - [ 0x2b, 0x62]
-      - [ 0x28, 0x03]
-      - [ 0x29, 0x44]
-      - [ 0x26, 0x02]
-      - [ 0x27, 0xfc]
-      - [ 0x24, 0x02]
-      - [ 0x25, 0xd0]
-      - [ 0x22, 0x02]
-      - [ 0x23, 0x98]
-      - [ 0x20, 0x02]
-      - [ 0x21, 0x6f]
-      - [ 0x1e, 0x02]
-      - [ 0x1f, 0x32]
-      - [ 0x1c, 0x01]
-      - [ 0x1d, 0xf6]
-      - [ 0x1a, 0x01]
-      - [ 0x1b, 0xb8]
-      - [ 0x18, 0x01]
-      - [ 0x19, 0x6E]
-      - [ 0x16, 0x01]
-      - [ 0x17, 0x41]
-      - [ 0x14, 0x00]
-      - [ 0x15, 0xfd]
-      - [ 0x12, 0x00]
-      - [ 0x13, 0xCf]
-      - [ 0x10, 0x00]
-      - [ 0x11, 0x98]
-      - [ 0x0e, 0x00]
-      - [ 0x0f, 0x89]
-      - [ 0x0c, 0x00]
-      - [ 0x0d, 0x79]
-      - [ 0x0a, 0x00]
-      - [ 0x0b, 0x67]
-      - [ 0x08, 0x00]
-      - [ 0x09, 0x55]
-      - [ 0x06, 0x00]
-      - [ 0x07, 0x3F]
-      - [ 0x04, 0x00]
-      - [ 0x05, 0x28]
-      - [ 0x02, 0x00]
-      - [ 0x03, 0x0E]
-      - [ 0xff, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x11]
-      - [ 0x60, 0x01]
-      - [ 0x65, 0x03]
-      - [ 0x66, 0x38]
-      - [ 0x67, 0x04]
-      - [ 0x68, 0x34]
-      - [ 0x69, 0x03]
-      - [ 0x61, 0x03]
-      - [ 0x62, 0x38]
-      - [ 0x63, 0x04]
-      - [ 0x64, 0x34]
-      - [ 0x0A, 0x11]
-      - [ 0x0B, 0x20]
-      - [ 0x0c, 0x20]
-      - [ 0x55, 0x06]
-      - [ 0xFF, 0x20, 0x10, 0x42]
-      - [ 0x05, 0x3D]
-      - [ 0x06, 0x03]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x1F, 0xDC]
-      - [ 0xff, 0x20, 0x10, 0x17]
-      - [ 0x11, 0xAA]
-      - [ 0x16, 0x12]
-      - [ 0x0B, 0xC3]
-      - [ 0x10, 0x0E]
-      - [ 0x14, 0xAA]
-      - [ 0x18, 0xA0]
-      - [ 0x1A, 0x80]
-      - [ 0x1F, 0x80]
-      - [ 0xff, 0x20, 0x10, 0x11]
-      - [ 0x30, 0xEE]
-      - [ 0xff, 0x20, 0x10, 0x12]
-      - [ 0x15, 0x0F]
-      - [ 0xff, 0x20, 0x10, 0x2D]
-      - [ 0x01, 0x3E]
-      - [ 0xff, 0x20, 0x10, 0x40]
-      - [ 0x83, 0xC4]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x00, 0xCC]
-      - [ 0x36, 0xA0]
-      - [ 0x2A, 0x2D]
-      - [ 0x2B, 0x1e]
-      - [ 0x2C, 0x26]
-      - [ 0x2D, 0x2D]
-      - [ 0x2E, 0x1e]
-      - [ 0x1F, 0xE6]
-      - [ 0xFF, 0x20, 0x10, 0xA0]
-      - [ 0x08, 0xE6]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x10, 0x0F]
-      - [ 0xFF, 0x20, 0x10, 0x18]
-      - [ 0x01, 0x01]
-      - [ 0x00, 0x1E]
-      - [ 0xFF, 0x20, 0x10, 0x43]
-      - [ 0x03, 0x04]
-      - [ 0xFF, 0x20, 0x10, 0x18]
-      - [ 0x3A, 0x01]
-      - [ 0xFF, 0x20, 0x10, 0x50]
-      - [ 0x05, 0x08]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x50]
-      - [ 0x00, 0xA6]
-      - [ 0x01, 0xA6]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x50]
-      - [ 0x08, 0x55]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x10]
-      - [ 0x0B, 0x43]
-      - [ 0x0C, 0x12]
-      - [ 0x10, 0x01]
-      - [ 0x11, 0x12]
-      - [ 0x15, 0x00]
-      - [ 0x16, 0x00]
-      - [ 0x1A, 0x00]
-      - [ 0x1B, 0x00]
-      - [ 0x61, 0x00]
-      - [ 0x62, 0x00]
-      - [ 0x51, 0x11]
-      - [ 0x55, 0x55]
-      - [ 0x58, 0x00]
-      - [ 0x5C, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x10]
-      - [ 0x20, 0x81]
-      - [ 0x21, 0x82]
-      - [ 0x22, 0x72]
-      - [ 0x30, 0x00]
-      - [ 0x31, 0x00]
-      - [ 0x32, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x10]
-      - [ 0x44, 0x44]
-      - [ 0x45, 0x55]
-      - [ 0x46, 0x66]
-      - [ 0x47, 0x77]
-      - [ 0x49, 0x00]
-      - [ 0x4A, 0x00]
-      - [ 0x4B, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x17]
-      - [ 0x37, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x15]
-      - [ 0x04, 0x08]
-      - [ 0x05, 0x04]
-      - [ 0x06, 0x1C]
-      - [ 0x07, 0x1A]
-      - [ 0x08, 0x18]
-      - [ 0x09, 0x16]
-      - [ 0x24, 0x05]
-      - [ 0x25, 0x09]
-      - [ 0x26, 0x17]
-      - [ 0x27, 0x19]
-      - [ 0x28, 0x1B]
-      - [ 0x29, 0x1D]
-      - [ 0xFF, 0x20, 0x10, 0x16]
-      - [ 0x04, 0x09]
-      - [ 0x05, 0x05]
-      - [ 0x06, 0x1D]
-      - [ 0x07, 0x1B]
-      - [ 0x08, 0x19]
-      - [ 0x09, 0x17]
-      - [ 0x24, 0x04]
-      - [ 0x25, 0x08]
-      - [ 0x26, 0x16]
-      - [ 0x27, 0x18]
-      - [ 0x28, 0x1A]
-      - [ 0x29, 0x1C]
-      - [ 0xFF, 0x20, 0x10, 0x18]
-      - [ 0x1F, 0x02]
-      - [ 0xFF, 0x20, 0x10, 0x11]
-      - [ 0x15, 0x99]
-      - [ 0x16, 0x99]
-      - [ 0x1C, 0x88]
-      - [ 0x1D, 0x88]
-      - [ 0x1E, 0x88]
-      - [ 0x13, 0xf0]
-      - [ 0x14, 0x34]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x12, 0x89]
-      - [ 0x06, 0x06]
-      - [ 0x18, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x11]
-      - [ 0x0A, 0x00]
-      - [ 0x0B, 0xF0]
-      - [ 0x0c, 0xF0]
-      - [ 0x6A, 0x10]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x11]
-      - [ 0x08, 0x70]
-      - [ 0x09, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0x35, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x12]
-      - [ 0x21, 0x70]
-      - [ 0xFF, 0x20, 0x10, 0x2D]
-      - [ 0x02, 0x00]
-      - [ 0xFF, 0x20, 0x10, 0x00]
-      - [ 0x11, 0x00]      
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0x36, 0x00]
+      #- [0x3A, 0x55]  # COLMOD on default page - set automatically by mipi_spi, leave commented
+      - [0xFF, 0x20, 0x10, 0x10]
+      - [0x0C, 0x11]
+      - [0x10, 0x02]
+      - [0x11, 0x11]
+      - [0x15, 0x42]
+      - [0x16, 0x11]
+      - [0x1A, 0x02]
+      - [0x1B, 0x11]
+      - [0x61, 0x80]
+      - [0x62, 0x80]
+      - [0x54, 0x44]
+      - [0x58, 0x88]
+      - [0x5C, 0xcc]
+      - [0xFF, 0x20, 0x10, 0x10]
+      - [0x20, 0x80]
+      - [0x21, 0x81]
+      - [0x22, 0x31]
+      - [0x23, 0x20]
+      - [0x24, 0x11]
+      - [0x25, 0x11]
+      - [0x26, 0x12]
+      - [0x27, 0x12]
+      - [0x30, 0x80]
+      - [0x31, 0x81]
+      - [0x32, 0x31]
+      - [0x33, 0x20]
+      - [0x34, 0x11]
+      - [0x35, 0x11]
+      - [0x36, 0x12]
+      - [0x37, 0x12]
+      - [0xFF, 0x20, 0x10, 0x10]
+      - [0x41, 0x11]
+      - [0x42, 0x22]
+      - [0x43, 0x33]
+      - [0x49, 0x11]
+      - [0x4A, 0x22]
+      - [0x4B, 0x33]
+      - [0xFF, 0x20, 0x10, 0x15]
+      - [0x00, 0x00]
+      - [0x01, 0x00]
+      - [0x02, 0x00]
+      - [0x03, 0x00]
+      - [0x04, 0x10]
+      - [0x05, 0x0C]
+      - [0x06, 0x23]
+      - [0x07, 0x22]
+      - [0x08, 0x21]
+      - [0x09, 0x20]
+      - [0x0A, 0x33]
+      - [0x0B, 0x32]
+      - [0x0C, 0x34]
+      - [0x0D, 0x35]
+      - [0x0E, 0x01]
+      - [0x0F, 0x01]
+      - [0x20, 0x00]
+      - [0x21, 0x00]
+      - [0x22, 0x00]
+      - [0x23, 0x00]
+      - [0x24, 0x0C]
+      - [0x25, 0x10]
+      - [0x26, 0x20]
+      - [0x27, 0x21]
+      - [0x28, 0x22]
+      - [0x29, 0x23]
+      - [0x2A, 0x33]
+      - [0x2B, 0x32]
+      - [0x2C, 0x34]
+      - [0x2D, 0x35]
+      - [0x2E, 0x01]
+      - [0x2F, 0x01]
+      - [0xFF, 0x20, 0x10, 0x16]
+      - [0x00, 0x00]
+      - [0x01, 0x00]
+      - [0x02, 0x00]
+      - [0x03, 0x00]
+      - [0x04, 0x08]
+      - [0x05, 0x04]
+      - [0x06, 0x19]
+      - [0x07, 0x18]
+      - [0x08, 0x17]
+      - [0x09, 0x16]
+      - [0x0A, 0x33]
+      - [0x0B, 0x32]
+      - [0x0C, 0x34]
+      - [0x0D, 0x35]
+      - [0x0E, 0x01]
+      - [0x0F, 0x01]
+      - [0x20, 0x00]
+      - [0x21, 0x00]
+      - [0x22, 0x00]
+      - [0x23, 0x00]
+      - [0x24, 0x04]
+      - [0x25, 0x08]
+      - [0x26, 0x16]
+      - [0x27, 0x17]
+      - [0x28, 0x18]
+      - [0x29, 0x19]
+      - [0x2A, 0x33]
+      - [0x2B, 0x32]
+      - [0x2C, 0x34]
+      - [0x2D, 0x35]
+      - [0x2E, 0x01]
+      - [0x2F, 0x01]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x00, 0x99]
+      - [0x2A, 0x28]
+      - [0x2B, 0x0f]
+      - [0x2C, 0x16]
+      - [0x2D, 0x28]
+      - [0x2E, 0x0f]
+      - [0xFF, 0x20, 0x10, 0xA0]
+      - [0x08, 0xdc]
+      - [0xFF, 0x20, 0x10, 0x45]
+      - [0x01, 0x9C]
+      - [0x03, 0x9C]
+      - [0xFF, 0x20, 0x10, 0x42]
+      - [0x05, 0x2c]
+      - [0xFF, 0x20, 0x10, 0x11]
+      - [0x50, 0x01]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0x2A, 0x00, 0x00, 0x01, 0x9B]
+      - [0x2B, 0x00, 0x00, 0x01, 0x9B]
+      - [0xFF, 0x20, 0x10, 0x40]
+      - [0x86, 0x00]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x0D, 0x66]
+      - [0xFF, 0x20, 0x10, 0x17]
+      - [0x39, 0x3c]
+      - [0xff, 0x20, 0x10, 0x31]
+      - [0x38, 0x03]
+      - [0x39, 0xf0]
+      - [0x36, 0x03]
+      - [0x37, 0xe8]
+      - [0x34, 0x03]
+      - [0x35, 0xCF]
+      - [0x32, 0x03]
+      - [0x33, 0xBA]
+      - [0x30, 0x03]
+      - [0x31, 0xA2]
+      - [0x2e, 0x03]
+      - [0x2f, 0x95]
+      - [0x2c, 0x03]
+      - [0x2d, 0x7e]
+      - [0x2a, 0x03]
+      - [0x2b, 0x62]
+      - [0x28, 0x03]
+      - [0x29, 0x44]
+      - [0x26, 0x02]
+      - [0x27, 0xfc]
+      - [0x24, 0x02]
+      - [0x25, 0xd0]
+      - [0x22, 0x02]
+      - [0x23, 0x98]
+      - [0x20, 0x02]
+      - [0x21, 0x6f]
+      - [0x1e, 0x02]
+      - [0x1f, 0x32]
+      - [0x1c, 0x01]
+      - [0x1d, 0xf6]
+      - [0x1a, 0x01]
+      - [0x1b, 0xb8]
+      - [0x18, 0x01]
+      - [0x19, 0x6E]
+      - [0x16, 0x01]
+      - [0x17, 0x41]
+      - [0x14, 0x00]
+      - [0x15, 0xfd]
+      - [0x12, 0x00]
+      - [0x13, 0xCf]
+      - [0x10, 0x00]
+      - [0x11, 0x98]
+      - [0x0e, 0x00]
+      - [0x0f, 0x89]
+      - [0x0c, 0x00]
+      - [0x0d, 0x79]
+      - [0x0a, 0x00]
+      - [0x0b, 0x67]
+      - [0x08, 0x00]
+      - [0x09, 0x55]
+      - [0x06, 0x00]
+      - [0x07, 0x3F]
+      - [0x04, 0x00]
+      - [0x05, 0x28]
+      - [0x02, 0x00]
+      - [0x03, 0x0E]
+      - [0xff, 0x20, 0x10, 0x00]
+      - [0xff, 0x20, 0x10, 0x32]
+      - [0x38, 0x03]
+      - [0x39, 0xf0]
+      - [0x36, 0x03]
+      - [0x37, 0xe8]
+      - [0x34, 0x03]
+      - [0x35, 0xCF]
+      - [0x32, 0x03]
+      - [0x33, 0xBA]
+      - [0x30, 0x03]
+      - [0x31, 0xA2]
+      - [0x2e, 0x03]
+      - [0x2f, 0x95]
+      - [0x2c, 0x03]
+      - [0x2d, 0x7e]
+      - [0x2a, 0x03]
+      - [0x2b, 0x62]
+      - [0x28, 0x03]
+      - [0x29, 0x44]
+      - [0x26, 0x02]
+      - [0x27, 0xfc]
+      - [0x24, 0x02]
+      - [0x25, 0xd0]
+      - [0x22, 0x02]
+      - [0x23, 0x98]
+      - [0x20, 0x02]
+      - [0x21, 0x6f]
+      - [0x1e, 0x02]
+      - [0x1f, 0x32]
+      - [0x1c, 0x01]
+      - [0x1d, 0xf6]
+      - [0x1a, 0x01]
+      - [0x1b, 0xb8]
+      - [0x18, 0x01]
+      - [0x19, 0x6E]
+      - [0x16, 0x01]
+      - [0x17, 0x41]
+      - [0x14, 0x00]
+      - [0x15, 0xfd]
+      - [0x12, 0x00]
+      - [0x13, 0xCf]
+      - [0x10, 0x00]
+      - [0x11, 0x98]
+      - [0x0e, 0x00]
+      - [0x0f, 0x89]
+      - [0x0c, 0x00]
+      - [0x0d, 0x79]
+      - [0x0a, 0x00]
+      - [0x0b, 0x67]
+      - [0x08, 0x00]
+      - [0x09, 0x55]
+      - [0x06, 0x00]
+      - [0x07, 0x3F]
+      - [0x04, 0x00]
+      - [0x05, 0x28]
+      - [0x02, 0x00]
+      - [0x03, 0x0E]
+      - [0xff, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x11]
+      - [0x60, 0x01]
+      - [0x65, 0x03]
+      - [0x66, 0x38]
+      - [0x67, 0x04]
+      - [0x68, 0x34]
+      - [0x69, 0x03]
+      - [0x61, 0x03]
+      - [0x62, 0x38]
+      - [0x63, 0x04]
+      - [0x64, 0x34]
+      - [0x0A, 0x11]
+      - [0x0B, 0x20]
+      - [0x0c, 0x20]
+      - [0x55, 0x06]
+      - [0xFF, 0x20, 0x10, 0x42]
+      - [0x05, 0x3D]
+      - [0x06, 0x03]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x1F, 0xDC]
+      - [0xff, 0x20, 0x10, 0x17]
+      - [0x11, 0xAA]
+      - [0x16, 0x12]
+      - [0x0B, 0xC3]
+      - [0x10, 0x0E]
+      - [0x14, 0xAA]
+      - [0x18, 0xA0]
+      - [0x1A, 0x80]
+      - [0x1F, 0x80]
+      - [0xff, 0x20, 0x10, 0x11]
+      - [0x30, 0xEE]
+      - [0xff, 0x20, 0x10, 0x12]
+      - [0x15, 0x0F]
+      - [0xff, 0x20, 0x10, 0x2D]
+      - [0x01, 0x3E]
+      - [0xff, 0x20, 0x10, 0x40]
+      - [0x83, 0xC4]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x00, 0xCC]
+      - [0x36, 0xA0]
+      - [0x2A, 0x2D]
+      - [0x2B, 0x1e]
+      - [0x2C, 0x26]
+      - [0x2D, 0x2D]
+      - [0x2E, 0x1e]
+      - [0x1F, 0xE6]
+      - [0xFF, 0x20, 0x10, 0xA0]
+      - [0x08, 0xE6]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x10, 0x0F]
+      - [0xFF, 0x20, 0x10, 0x18]
+      - [0x01, 0x01]
+      - [0x00, 0x1E]
+      - [0xFF, 0x20, 0x10, 0x43]
+      - [0x03, 0x04]
+      - [0xFF, 0x20, 0x10, 0x18]
+      - [0x3A, 0x01]  # RESTORED: bank register on page 0x18 (removing this was breaking the colours)
+      - [0xFF, 0x20, 0x10, 0x50]
+      - [0x05, 0x08]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x50]
+      - [0x00, 0xA6]
+      - [0x01, 0xA6]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x50]
+      - [0x08, 0x55]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x10]
+      - [0x0B, 0x43]
+      - [0x0C, 0x12]
+      - [0x10, 0x01]
+      - [0x11, 0x12]
+      - [0x15, 0x00]
+      - [0x16, 0x00]
+      - [0x1A, 0x00]
+      - [0x1B, 0x00]
+      - [0x61, 0x00]
+      - [0x62, 0x00]
+      - [0x51, 0x11]
+      - [0x55, 0x55]
+      - [0x58, 0x00]
+      - [0x5C, 0x00]
+      - [0xFF, 0x20, 0x10, 0x10]
+      - [0x20, 0x81]
+      - [0x21, 0x82]
+      - [0x22, 0x72]
+      - [0x30, 0x00]
+      - [0x31, 0x00]
+      - [0x32, 0x00]
+      - [0xFF, 0x20, 0x10, 0x10]
+      - [0x44, 0x44]
+      - [0x45, 0x55]
+      - [0x46, 0x66]
+      - [0x47, 0x77]
+      - [0x49, 0x00]
+      - [0x4A, 0x00]
+      - [0x4B, 0x00]
+      - [0xFF, 0x20, 0x10, 0x17]
+      - [0x37, 0x00]
+      - [0xFF, 0x20, 0x10, 0x15]
+      - [0x04, 0x08]
+      - [0x05, 0x04]
+      - [0x06, 0x1C]
+      - [0x07, 0x1A]
+      - [0x08, 0x18]
+      - [0x09, 0x16]
+      - [0x24, 0x05]
+      - [0x25, 0x09]
+      - [0x26, 0x17]
+      - [0x27, 0x19]
+      - [0x28, 0x1B]
+      - [0x29, 0x1D]
+      - [0xFF, 0x20, 0x10, 0x16]
+      - [0x04, 0x09]
+      - [0x05, 0x05]
+      - [0x06, 0x1D]
+      - [0x07, 0x1B]
+      - [0x08, 0x19]
+      - [0x09, 0x17]
+      - [0x24, 0x04]
+      - [0x25, 0x08]
+      - [0x26, 0x16]
+      - [0x27, 0x18]
+      - [0x28, 0x1A]
+      - [0x29, 0x1C]
+      - [0xFF, 0x20, 0x10, 0x18]
+      - [0x1F, 0x02]
+      - [0xFF, 0x20, 0x10, 0x11]
+      - [0x15, 0x99]
+      - [0x16, 0x99]
+      - [0x1C, 0x88]
+      - [0x1D, 0x88]
+      - [0x1E, 0x88]
+      - [0x13, 0xf0]
+      - [0x14, 0x34]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x12, 0x89]
+      - [0x06, 0x06]
+      - [0x18, 0x00]
+      - [0xFF, 0x20, 0x10, 0x11]
+      - [0x0A, 0x00]
+      - [0x0B, 0xF0]
+      - [0x0c, 0xF0]
+      - [0x6A, 0x10]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0xFF, 0x20, 0x10, 0x11]
+      - [0x08, 0x70]
+      - [0x09, 0x00]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0x35, 0x00]
+      - [0xFF, 0x20, 0x10, 0x12]
+      - [0x21, 0x70]
+      - [0xFF, 0x20, 0x10, 0x2D]
+      - [0x02, 0x00]
+      - [0xFF, 0x20, 0x10, 0x00]
+      - [0x11, 0x00]
       - delay 120ms
 
 lvgl:
@@ -1452,12 +1502,14 @@ lvgl:
       on_swipe_left:
         then:
           - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+          - lambda: 'id(last_active_ms) = millis();'
           - lvgl.page.next:
               animation: FADE_OUT
               time: 200ms
       on_swipe_right:
         then:
           - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+          - lambda: 'id(last_active_ms) = millis();'
           - lvgl.page.next:
               animation: FADE_OUT
               time: 200ms
@@ -1506,7 +1558,7 @@ lvgl:
             id: power_value_lbl
             align: CENTER
             x: -164
-            y: 16 
+            y: 5
             text: "-- W"
             text_font: montserrat_22
             text_color: 0x2196F3 
@@ -1516,8 +1568,8 @@ lvgl:
             text_font: roboto_icons_40
             text: ""
             text_color: lime
-            y: -75
-            x: -80
+            x: -85
+            y: -85
 
         - label:
             id: shoppingcart_label
@@ -1631,7 +1683,6 @@ lvgl:
             radius: 0            # LVGL computes radius from size; 0 keeps it centered
             bg_opa: transp
             bg_color: 0xFFFFFF   # white
-            #start_angle: 0
             start_angle: 30
             #end_angle: 360
             end_angle: 330
@@ -1672,7 +1723,7 @@ lvgl:
         - label:
             id: page_name_label
             align: CENTER
-            y: -160
+            y: -150
             text: "\U000F075A"
             text_font: roboto_icons_80
             text_color: yellow
@@ -1684,28 +1735,13 @@ lvgl:
             text_font: montserrat_24
             text_color: 0xFFFFFF
             y: -40
-  # Commented out due to xiao ai speaker not supporting music assitant
-  #      - label:
-  #          id: lbl_title
-  #          y: -30
-  #          pad_all: 25
-  #          width: 500
-  #          bg_opa: 40%
-  #          styles: box_style
-  #          text_font: music_title_font
-  #          text: "Title: unknown"
-  #          long_mode: SCROLL_CIRCULAR
         
         - button:
             id: bm_prev
             text: "\U000F04AE"
             text_font: roboto_icons_80
-            y: 60
+            y: 80
             x: -110
-            pad_left: 20
-            pad_right: 20
-            width: 90
-            height: 72
             bg_opa: transp
             shadow_opa: transp
             styles: box_style
@@ -1719,11 +1755,7 @@ lvgl:
             id: bm_play
             text: "\U000F040A"
             text_font: roboto_icons_80
-            y: 60
-            width: 100
-            height: 72
-            pad_left: 25
-            pad_right: 25
+            y: 80
             bg_opa: transp
             shadow_opa: transp
             styles: box_style
@@ -1741,36 +1773,69 @@ lvgl:
         - button:
             id: btn_next
             text: "\U000F04AD"
-            text_font: roboto_icons_80
-            y: 60
-            x: 110
-            pad_left: 20
-            pad_right: 20
-            width: 90
-            height: 72
-            bg_opa: transp
-            shadow_opa: transp     
             styles: box_style
+            text_font: roboto_icons_80
+            x: 110
+            y: 80
+            bg_opa: transp
+            shadow_opa: transp
             pressed:
               bg_color: 0xFFFF00
             on_click:
               - lambda: |-
                   id(my_media_next).execute();
-
+        #music visualizer
+        - bar:
+            id: music_vis_1
+            x: -26
+            y: 170
+            min_value: 0
+            max_value: 100
+            bg_opa: transp
+            shadow_opa: transp
+            styles: music_vis_style
+            indicator:
+              styles: music_vis_style_1
+        - bar:
+            id: music_vis_2
+            x: -13
+            y: 170
+            min_value: 0
+            max_value: 100
+            bg_opa: transp
+            shadow_opa: transp
+            styles: music_vis_style
+            indicator:
+              styles: music_vis_style_2
+        - bar:
+            id: music_vis_3
+            x: 3
+            y: 170
+            min_value: 0
+            max_value: 100
+            bg_opa: transp
+            shadow_opa: transp
+            styles: music_vis_style
+            indicator:
+              styles: music_vis_style_3
+        - bar:
+            id: music_vis_4
+            x: 20
+            y: 170
+            min_value: 0
+            max_value: 100
+            bg_opa: transp
+            shadow_opa: transp
+            styles: music_vis_style
+            indicator:
+              styles: music_vis_style_4
+            
   style_definitions:
     - id: box_style
       align: CENTER
       text_align: CENTER
-      radius: 5
       text_color: white
-      pad_all: 15
-      bg_color: 0x000000
-      bg_opa: 60%
-
-    # a dimmed style for muted page
-    - id: muted_bg_style
-      bg_color: red
-
+      
     # Base list item style (white text)
     - id: shopping_item_style
       bg_opa: transp
@@ -1780,17 +1845,23 @@ lvgl:
       pad_top: 8
       pad_bottom: 8
       text_color: 0x000000
-
-    - id: date_style
-      text_color: 0x000000       # black text
-      text_font: montserrat_28
-      bg_opa: TRANSP             # transparent background
-      border_opa: TRANSP
-      pad_all: 4
-      align: CENTER 
-
-
-
+    #music visulizer
+    - id: music_vis_style
+      width: 10px
+      height: 50px
+      bg_color: 0x333333
+      bg_opa: cover
+      align: CENTER
+      text_align: CENTER
+    # Individual indicator colors for each bar
+    - id: music_vis_style_1
+      bg_color: 0xFFAA00    # Orange
+    - id: music_vis_style_2
+      bg_color: 0xFF4444    # Red 
+    - id: music_vis_style_3
+      bg_color: 0x4444FF    # Blue
+    - id: music_vis_style_4
+      bg_color: 0x44FF44    # Green
 # TEXT SENSORS → last response
 # -----------------------------------------------------------------------------
 text_sensor:
@@ -1808,7 +1879,7 @@ text_sensor:
             text: !lambda |-
               std::string name = id(ha_friendly_name).state;
               if (!name.empty()) name[0] = toupper(name[0]);
-              return name + " - " + id(ha_media_status).state;
+              return name + "\n" + id(ha_media_status).state;
 
   - platform: homeassistant
     entity_id: media_player.${external_media_player}
@@ -1820,7 +1891,7 @@ text_sensor:
             text: !lambda |-
               std::string name = id(ha_friendly_name).state;
               if (!name.empty()) name[0] = toupper(name[0]);
-              return name + " - " + id(ha_media_status).state;
+              return name + "\n" + id(ha_media_status).state;
         - lvgl.button.update:
             id: bm_play
             text: !lambda |-
@@ -1828,7 +1899,6 @@ text_sensor:
               return (id(ha_media_status).state == "playing")
                 ? std::string("\U000F03E4")   // e.g., mdi-pause
                 : std::string("\U000F040A");  // e.g., mdi-play
-
 
 #  - platform: homeassistant
 #    entity_id: media_player.${external_media_player}
@@ -1846,10 +1916,9 @@ text_sensor:
 #              } else {
 #                return std::string("Title: unknown");
 #              }
-
+    
 sensor:
    # Reports the WiFi signal strength/RSSI in dB
-
   - platform: wifi_signal
     name: "WiFi Signal dB"
     id: wifi_signal_db
@@ -1905,42 +1974,21 @@ sensor:
             text:
               format: "%d W"
               args: [ "(int) roundf(id(ha_power_w).state)" ]
-  #accelerometer 
-  - platform: template
-    name: "Accel X"
-    id: accel_x
-    unit_of_measurement: "g"
-    accuracy_decimals: 2
-    update_interval: 500ms
-    internal: true
-    lambda: |-
-      uint8_t reg = 0x35;   // Accel X LSB
-      uint8_t data[2];
-      if (id(bus_imu_touch_rtc)->write_readv(0x6B, &reg, 1, data, 2) != i2c::ERROR_OK)
-        return NAN;
 
-      int16_t raw = (int16_t)((data[1] << 8) | data[0]);
+  - platform: qmi8658
+    qmi8658_id: qmi8658_imu
+    accel_x:
+      name: "Accel-qmi8658 X"
+      accuracy_decimals: 2
+    accel_y:
+      name: "Accel-qmi8658 Y"
+      accuracy_decimals: 2
+    accel_z:
+      name: "Accel-qmi8658 Z"
+      internal: true
+      accuracy_decimals: 2
 
-      // ±2g scale
-      return raw / 16384.0;
-
-  - platform: template
-    name: "Accel Y"
-    id: accel_y
-    unit_of_measurement: "g"
-    accuracy_decimals: 2
-    update_interval: 400ms
-    internal: true
-    lambda: |-
-      uint8_t reg = 0x37;   // Accel Y LSB
-      uint8_t data[2];
-      if (id(bus_imu_touch_rtc)->write_readv(0x6B, &reg, 1, data, 2) != i2c::ERROR_OK)
-        return NAN;
-
-      int16_t raw = (int16_t)((data[1] << 8) | data[0]);
-
-      // ±2g scale
-      return raw / 16384.0;
+      
 binary_sensor:
   - platform: homeassistant
     id: ha_nightlight_state
@@ -1986,7 +2034,6 @@ globals:
     type: std::string
     restore_value: no
     initial_value: ""
-
 
   # voice assistant Phase IDs
   - id: voice_assist_idle_phase_id
@@ -2042,8 +2089,13 @@ globals:
   - id: va_blink_on
     type: bool
     initial_value: "false"
-
-# ESPHome text entity to hold the Shopping List string
+    
+  - id: vis_phase  #vis_phase (0–3) acts as the animation step counter
+    type: int
+    restore_value: no
+    initial_value: '0'
+  
+       
 text:
   - platform: template
     id: shopping_text
@@ -2092,6 +2144,7 @@ text:
         #text_color
         - lvgl.widget.redraw: bin_label
 
+ 
 color:
   - id: active_timer_color
     hex: '26ed3a'
@@ -2184,13 +2237,7 @@ font:
           "\U000F01B4", # bin
           "\U000F044C", # recycle bin
           ]
-  - file: "/config/esphome/font/hpsimplifiedhans-regular.ttf"
-    id: music_title_font
-    size: 26
-    glyphs:
-      - " []()+=,-_.:!@*{}`|°~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-      - "。，“”王力宏花田错歌之海枯石烂一直很安静路上有你首简单的下沙游鸿明不要对他说张信哲中国话为写诗亚瑟小子爱我莫文蔚传奇在知道事是心内承诺背包仰倔强别怕伤十年陈奕迅吴克群残废周华健没会让想起因情墨尔本晴夜曲杰伦大城太早孤勇者宽容富士山就陶喆屋顶布兰妮英版美少女祈祷希望广岛恋庐州月许嵩真学友碎了无痕和去吹风敬轩吻得逼韶涵亲那彩虹天堂往後余生貳浪徐誉滕使翅膀跳忠孝东走九遍快乐崇拜忽然间多后悔配们好都样麦受手放开拥抱拯救改变自己断点赖曹格叛李圣痴绝楼个人江南林俊么清雨温柔五雪演员薛谦如潮水转移独家记忆唯场戏梦存以活男洋白光足突等分钟红玫瑰老与落叶归根蓝色解脱谎贾斯汀越纯幸福过火遇见孙燕姿什浮夸绮贞旅行意义丽镇姑娘找暗蝴蝶晶莹委屈预感黑柳丁龙能秘密吗亭序园时机第七章最长电影枫烟圈易冷甜祝日稻香给蒲公约定呢超飞跨代整青瓷毛衣做两森难依舍罪当忘卡片钥匙动求留用疼些音阴抗拒颜迈逊冰万练习缠绵千理由毒珍贵偷別她来听唱果这算刀割到书儿也谢呼吸痛气可惜三星杜伟跟辈杨嬅瓶座柴盐酱醋茶梁咏琪价孟婆汤灰象葬礼滴泪素煌袁惟仁醒旭浆条退春瘤菌团荆棘鱼眼豆齐井庾澄庆泥地出而看发成只把还作种总从面但现前所同又方期它头经位名法世次身被高已其进此常正问几特外孩相西将实向声车全重工物每并打新比才便夫再部像体却加主界门利表先口死性马或住教命结更拉神处母父应字平报关至认接告入笑军候民岁何度觉带边叫任金原吃妈通师立数四失满战远轻目病始达深完今提化空业思切怎非罗钱语元喜曾离科干流欢各即指合反题必该论交终请医晚制球决画保读运及则房院量苦品近坐产答精视连司巴管类未朋且婚台北队久乎观尽形爸百令吧识步术市半热送兴造谈极随收讲式取照办古拿计您装似双妻尼诉米称客领节站刻统故历惊脸选紧争另建维树系示愿持史准联妇纪基买志阿"
-     
+  
 image:
   - file: ${bg_img}
     id: round_bg
