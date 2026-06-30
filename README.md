@@ -1,9 +1,9 @@
 # waveshare-lcd-1.46-touch
 
 Device: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.46B
-This project is for esphome, download the three files in esp2010_glue folder and put it into esphome\components\esp2010_glue
+This project is for esphome, download the three files in components/spd2010_touch folder and put it into esphome/components/esp2010_touch
 
-Added external component spd2010_glue, which glue the official lcd_touch driver and lcd_touch_spd2010.
+Added external component spd2010_touch, which glues the official lcd_touch driver and lcd_touch_spd2010.
 
 ## Functions
 - Voice assistant
@@ -46,3 +46,12 @@ actions:
         {% endif %}
 mode: single
 ```
+## Preview
+##### Main page
+<p align="center">
+  <img src="Final_ui.png" width="65%">
+</p>
+##### Media page
+<p align="center">
+  <img src="Final_ui.png" width="65%">
+</p>
