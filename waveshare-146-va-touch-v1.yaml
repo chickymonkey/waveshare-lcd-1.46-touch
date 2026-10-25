@@ -2,20 +2,18 @@
 # avoid screen swap when Voice assistant, or timer is active.
 # Response and shopping list scroll when content is longer than it's label size
 # v1.2 touch integrated with spd2010_glue component
-# v1.3 added QMI8658 accelerator driver as external component
-# add ota password as ota_key to your secrets setting.
+#media_player.xiao_ai_yin_xiang_9318
 ---
 substitutions:
-  #bg_img: /config/esphome/images/default/waveshare_bg_tp420.jpg
+  #bg_img: /config/esphome/images/default/waveshare_bg_tp420.jpgalarm_face_412.png
   bg_img: "https://raw.githubusercontent.com/chickymonkey/waveshare-lcd-1.46-touch/refs/heads/main/waveshare_bg_tp420.jpg"
   music_bg_img: "https://raw.githubusercontent.com/chickymonkey/waveshare-lcd-1.46-touch/refs/heads/main/music_bg_412.png"
   wifi_name: "Waveshare-146-Va"
   left_sensor: "sensor.powerpal_real_time_power"
-  dishwasher_price_sensor: "sensor.finish_dishwashing_tablets_56_pack"
   right_switch: "light.tv_floor_lamp"
   #media player in home assistant
   external_media_player: "living_room_speaker"
-  
+
 esphome:
   name: waveshare-146-va
   friendly_name: waveshare 146 va 1.2
@@ -34,7 +32,16 @@ esphome:
         - delay: 300ms
         - lambda: |-
             id(spd2010_touch_driver).begin();
-  
+        #Populate the minute/second rollers at boot
+        - lambda: |-
+            std::vector<std::string> sixty;
+            for (int i = 0; i < 60; i++) {
+              char buf[4];
+              snprintf(buf, sizeof(buf), "%02d", i);
+              sixty.push_back(buf);
+            }
+            id(timer_min_roller)->set_options(sixty);
+            id(timer_sec_roller)->set_options(sixty);
 esp32:
   board: esp32-s3-devkitc-1
   variant: esp32s3
@@ -69,7 +76,6 @@ logger:
     component: WARN
     select: INFO
     light: INFO
-    lvgl: INFO
     display: WARN
     speaker: WARN
     microphone: WARN
@@ -213,6 +219,28 @@ interval:
             - lvgl.bar.update:
                 id: music_vis_4
                 value: 0
+  - interval: 1s #manual timer
+    then:
+      - if:
+          condition:
+            lambda: return id(manual_timer_running);
+          then:
+            
+            - lambda: |-
+                if (id(manual_timer_remaining_sec) > 0) {
+                  id(manual_timer_remaining_sec) -= 1;
+                  id(last_active_ms) = millis(); //    reset idle timer when timer is ticking
+                }
+            - script.execute: update_manual_timer_display
+            - if:
+                condition:
+                  lambda: return id(manual_timer_remaining_sec) <= 0;
+                then:
+                  - lambda: |-
+                      id(manual_timer_running) = false;
+                      id(manual_timer_total_sec) = 0;
+                  - switch.turn_on: timer_ringing
+                  # Optional: fire a HA event / flash / beep here on timer completion
 network:
   enable_high_performance: false
 psram:
@@ -515,6 +543,8 @@ switch:
     internal: true
     restore_mode: ALWAYS_OFF
     on_turn_off:
+      - lvgl.widget.hide: btn_timer_cancel
+      - lvgl.widget.show: btn_timer_start
       # Turn off the repeat mode and disable the pause between playlist items
       - lambda: |-
               id(speaker_media_player)
@@ -526,6 +556,9 @@ switch:
       # Stop playing the alarm
       - media_player.stop:
           announcement: true
+      #After alarm control button/roller reset
+      - lvgl.widget.hide: btn_timer_cancel
+      - lvgl.widget.show: btn_timer_start
     on_turn_on:
       # Turn on the repeat mode and pause for 1000 ms between playlist items/repeats
       - lambda: |-
@@ -538,7 +571,7 @@ switch:
       #make sure volume is not too small for alarm.
       - speaker.volume_set:
           id: i2s_audio_speaker
-          volume: 95%
+          volume: 100%
 
       - media_player.speaker.play_on_device_media_file:
           media_file: timer_finished_sound
@@ -904,7 +937,7 @@ script:
                 condition:
                   #lambda: 'return id(timer_progress_has_timer);'
                   lambda: |-
-                          return id(timer_progress_has_timer) && (id(timer_progress_seconds_left) > 0);
+                    return id(timer_progress_has_timer) && (id(timer_progress_seconds_left) > 0);
 
                 then:
                   - lvgl.arc.update:
@@ -1010,7 +1043,28 @@ script:
           then:
             - lvgl.page.show:
                 id: main_page
-        
+
+  #manual alarm
+  - id: update_manual_timer_display
+    then:
+      - if:
+          condition:
+            lambda: return id(manual_timer_running);
+          then:
+            - lambda: |-
+                int rem = id(manual_timer_remaining_sec);
+                int h = rem / 3600;
+                int m = (rem % 3600) / 60;
+                int s = rem % 60;
+                id(timer_hour_roller)->set_selected_index(h, LV_ANIM_ON);
+                id(timer_min_roller)->set_selected_index(m, LV_ANIM_ON);
+                id(timer_sec_roller)->set_selected_index(s, LV_ANIM_ON);
+          else:
+            - lambda: |-  
+                //below reset all rollers to 0
+                id(timer_hour_roller)->set_selected_index(0, LV_ANIM_ON);
+                id(timer_min_roller)->set_selected_index(0, LV_ANIM_ON);
+                id(timer_sec_roller)->set_selected_index(0, LV_ANIM_ON);
 output:
   - platform: ledc
     pin: GPIO5
@@ -1498,7 +1552,7 @@ lvgl:
           - switch.turn_off: switch_antiburn
       on_click: 
         then:
-          - lambda: 'id(last_active_ms) = millis();'
+          - lambda: 'id(last_active_ms) = millis();' # reset idle timer
       on_swipe_left:
         then:
           - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
@@ -1510,7 +1564,8 @@ lvgl:
         then:
           - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
           - lambda: 'id(last_active_ms) = millis();'
-          - lvgl.page.next:
+          - lvgl.page.show:
+              id: alarm_page
               animation: FADE_OUT
               time: 200ms
       bg_image_src: round_bg
@@ -1568,7 +1623,7 @@ lvgl:
             text_font: roboto_icons_40
             text: ""
             text_color: lime
-            x: -85
+            x: 65
             y: -85
 
         - label:
@@ -1584,7 +1639,7 @@ lvgl:
             align: CENTER
             y: 28
             text: "" 
-            text_font: montserrat_26
+            text_font: shoppinglist_font
             text_color: 0xffffff
             height: 195
             max_width: 223
@@ -1625,25 +1680,26 @@ lvgl:
                           data:
                             entity_id: ${right_switch}
 
-        #- label:
-        #    id: thermometer
-        #    align: CENTER
-        #    text_font: roboto_icons_40
-        #    text: "\U000F050F"
-        #    text_color: red
-        #    x: 175
-        #    y: -19
-            
-        # temperature label at mid-right
-        #- label:
-        #    id: temp_value_label
-        #    align: CENTER
-        #    x: 170
-        #    y: 16
-        #    text: "--°C"
-        #    text_font: montserrat_24
-        #    text_color: amber
-        # Response box (bottom)
+
+        - button:
+            id: timer_trigger
+            width: 90
+            height: 90
+            align: CENTER
+            x: 115
+            y: 28
+            radius: 45
+            text_align: CENTER
+            styles: transparent_btn_style
+            on_click:
+              then:
+                - lvgl.page.show: alarm_page
+                - lambda: 'id(last_active_ms) = millis();'
+            widgets:
+              - label:
+                  id: alarm_trigger
+                  text: "\U000F0020"
+                  text_font: roboto_icons_80
         - label:
             id: va_response_label
             align: CENTER
@@ -1653,17 +1709,7 @@ lvgl:
             text_font: montserrat_22
             text_color: 0xffffff
             width: 255
-            long_mode: SCROLL_CIRCULAR
-        - label:
-            id: price_label
-            align: CENTER
-            text_align: CENTER
-            y: 170
-            text: "..."
-            text_font: montserrat_22
-            text_color: 0xffffff
-            width: 255
-            long_mode: SCROLL_CIRCULAR            
+            long_mode: SCROLL_CIRCULAR          
 
         - label:
             id: timer_progress_text
@@ -1710,13 +1756,15 @@ lvgl:
       on_swipe_right:
         then:
           - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+          - lambda: 'id(last_active_ms) = millis();'
           - lvgl.page.previous:
               animation: FADE_IN
               time: 200ms
       on_swipe_left:
         then:
           - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
-          - lvgl.page.previous:
+          - lambda: 'id(last_active_ms) = millis();'
+          - lvgl.page.next:
               animation: FADE_IN
               time: 200ms
       widgets:
@@ -1829,7 +1877,194 @@ lvgl:
             styles: music_vis_style
             indicator:
               styles: music_vis_style_4
+    - id: alarm_page
+      bg_opa: COVER
+      bg_color: black
+      on_click: 
+        then:
+          - lambda: 'id(last_active_ms) = millis();'
+      
+      on_swipe_left:
+        then:
+          - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+          - lambda: 'id(last_active_ms) = millis();'
+          - lvgl.page.show:
+              id: main_page
+              animation: FADE_OUT
+              time: 200ms
+      on_swipe_right:
+        then:
+          - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+          - lambda: 'id(last_active_ms) = millis();'
+          - lvgl.page.previous:
+              animation: FADE_OUT
+              time: 200ms
+      widgets:
+        - label:
+            id: alarm_label
+            width: 90
+            height: 90
+            radius: 45
+            align: CENTER
+            text: "\U000F0020"
+            text_font: roboto_icons_80
+            text_color: 0xFF6C00
+            y: -165
+            text_align: CENTER
+            styles: transparent_btn_style
             
+        - label:
+            id: hour_label
+            text: "H"
+            align: CENTER
+            text_align: CENTER
+            text_color: white
+            text_font: montserrat_36
+            x: -100
+            y: -110
+
+        - roller:
+            id: timer_hour_roller
+            align: CENTER
+            text_font: montserrat_40
+            x: -100
+            width: 80
+            visible_row_count: 3
+            options:
+              - "0"
+              - "1"
+              - "2"
+              - "3"
+              - "4"
+            #selected: 0
+            on_change:
+              then:
+                - lambda: 'id(last_active_ms) = millis();'
+        - label:
+            id: colon_hm
+            text: ":"
+            align: CENTER
+            text_align: CENTER
+            text_color: grey
+            text_font: montserrat_48
+            x: -50
+            y: 0
+        - label:
+            id: min_label
+            text: "M"
+            align: CENTER
+            text_align: CENTER
+            text_color: white
+            text_font: montserrat_36
+            y: -110
+        - roller:
+            id: timer_min_roller
+            align: CENTER
+            text_font: montserrat_40
+            width: 80
+            visible_row_count: 3
+            options:
+              - "00"   # placeholder, replaced at boot with 00-59
+            #selected: 0
+            on_change:
+              then:
+                - lambda: 'id(last_active_ms) = millis();'
+        - label:
+            id: colon_ms
+            text: ":"
+            align: CENTER
+            text_align: CENTER
+            text_color: grey
+            text_font: montserrat_48
+            x: 50
+            y: 0
+        - label:
+            id: sec_label
+            text: "S"
+            align: CENTER
+            text_align: CENTER
+            text_color: white
+            text_font: montserrat_36
+            x: 100
+            y: -110
+        - roller:
+            id: timer_sec_roller
+            align: CENTER
+            text_font: montserrat_40
+            x: 100
+            width: 80
+            visible_row_count: 3
+            options:
+              - "00"   # placeholder, replaced at boot with 00-59
+            on_change:
+              then:
+                - lambda: 'id(last_active_ms) = millis();'
+        - button:
+            id: btn_timer_start
+            align: CENTER
+            x: 0
+            y: 155
+            width: 110
+            height: 110
+            radius: 55
+            bg_color: 0x1a7a1a
+            widgets:
+              - label:
+                  text: "Start"
+                  align: CENTER
+                  text_font: montserrat_30
+            on_click:
+              - lambda: |-
+                  int h = id(timer_hour_roller)->get_selected_index();
+                  int m = id(timer_min_roller)->get_selected_index();
+                  int s = id(timer_sec_roller)->get_selected_index();
+                  int total = h * 3600 + m * 60 + s;
+                  if (total > 0) {
+                    id(manual_timer_total_sec) = total;
+                    id(manual_timer_remaining_sec) = total;
+                    id(manual_timer_running) = true;
+                  }
+              - if:
+                  condition:
+                    lambda: return id(manual_timer_running);
+                  then:
+                    - lvgl.widget.hide: btn_timer_start
+                    - lvgl.widget.show: btn_timer_cancel
+                    - script.execute: update_manual_timer_display
+        - button:
+            id: btn_timer_cancel
+            align: CENTER
+            x: 0
+            y: 155
+            width: 110
+            height: 110
+            radius: 55
+            bg_color: 0xFF6C00
+            hidden: true
+            widgets:
+              - label:
+                  text: "Cancel"
+                  align: CENTER
+                  text_font: montserrat_30
+            on_click:
+              - lambda: |-
+                  id(manual_timer_running) = false;
+                  id(manual_timer_total_sec) = 0;
+                  id(manual_timer_remaining_sec) = 0;
+                  
+              - switch.turn_off: timer_ringing
+              - lvgl.widget.hide: btn_timer_cancel
+              - lvgl.widget.show: btn_timer_start
+              - script.execute: update_manual_timer_display
+        - label:
+            id: alarm_timer_progress_text
+            align: CENTER
+            y: 180
+            text: ""
+            text_font: montserrat_44
+            text_color: 0xffffff
+            hidden: true
+                
   style_definitions:
     - id: box_style
       align: CENTER
@@ -1862,6 +2097,14 @@ lvgl:
       bg_color: 0x4444FF    # Blue
     - id: music_vis_style_4
       bg_color: 0x44FF44    # Green
+   
+    - id: transparent_btn_style
+      bg_opa: transp
+      border_width: 0
+      shadow_width: 0
+      outline_width: 0
+      radius: 0
+      pad_all: 0
 # TEXT SENSORS → last response
 # -----------------------------------------------------------------------------
 text_sensor:
@@ -1985,9 +2228,7 @@ sensor:
       accuracy_decimals: 2
     accel_z:
       name: "Accel-qmi8658 Z"
-      internal: true
       accuracy_decimals: 2
-
       
 binary_sensor:
   - platform: homeassistant
@@ -2094,7 +2335,19 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
-  
+  #manual timer
+  - id: manual_timer_total_sec
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: manual_timer_remaining_sec
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: manual_timer_running
+    type: bool
+    restore_value: false
+    initial_value: 'false'  
        
 text:
   - platform: template
@@ -2152,6 +2405,8 @@ color:
     hex: '3b89e3'
   - id: black
     hex: '000000'
+  - id: grey
+    hex: 'cccccc'
   - id: white
     hex: 'ffffff'
   - id: purple
@@ -2236,8 +2491,15 @@ font:
           "\U000F0110", #shopping cart
           "\U000F01B4", # bin
           "\U000F044C", # recycle bin
+          "\U000F0020" #alarm
           ]
-  
+  - file: "/config/esphome/font/hpsimplifiedhans-regular.ttf"
+    id: shoppinglist_font
+    size: 26
+    glyphs:
+      - " []()+=,-_.:!@*{}`|°~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+      - "。，“”酱王宏田错歌之枯石烂一直很安有你首简单的下游鸿明不要对他说基买志阿油豆瓣老抽生蚝香麻食醋白米料酒味精鸡盐糖冰红蜂蜜辣椒甜面芝花番茄沙茶豉腐乳咖喱胡粉五孜然八角桂皮叶干大蒜姜葱洋韭菜青菠芹黄瓜冬南丝苦土薯芋头山药萝卜子四季豌玉蘑菇金针木耳银竹笋莲藕条挂年糕馒饺包汤圆粽浆芽猪肉牛羊鸭排骨里脊蛋咸鲜鱼虾螃蟹鱿带鲫鲤三文奶酸啤果汁可乐矿泉水绿啡苹蕉橙葡萄西草莓桃雪梨柠檬榴芒荔枝龙眼火猕猴饼片巧克力核杏仁紫海榨泡腊肠腿午餐方便速冻淇淋卫纸洗衣液牙膏刷肥皂发沐浴露清洁剂"
+
 image:
   - file: ${bg_img}
     id: round_bg
