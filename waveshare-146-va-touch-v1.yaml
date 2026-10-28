@@ -2,7 +2,41 @@
 # avoid screen swap when Voice assistant, or timer is active.
 # Response and shopping list scroll when content is longer than it's label size
 # v1.2 touch integrated with spd2010_glue component
-#media_player.xiao_ai_yin_xiang_9318
+# v1.3 Use text to change the media player dynamically, screen is integriterd into esphome.
+# Use below automation to update media player name from Music assistant media_player.
+# Entity IDs: I guessed the text.waveshare_146_va_1_2_… names from the device's friendly name. Check the real ones on the device page > ESPHOME in Home Assistant.
+
+# alias: Waveshare146 - push media player status
+# mode: queued
+# max_exceeded: silent
+# triggers:
+#   - trigger: state
+#     entity_id: text.waveshare_146_va_1_2_media_player_to_control
+#   - trigger: event
+#     event_type: state_changed
+#   - trigger: homeassistant
+#     event: start
+# variables:
+#   player: "{{ states('text.waveshare_146_va_1_2_media_player_to_control') | trim }}"
+# conditions:
+#   - condition: template
+#     value_template: >
+#       {{ trigger.platform != 'event'
+#          or (trigger.event.data.entity_id == player
+#              and trigger.event.data.new_state is not none
+#              and (trigger.event.data.old_state is none
+#                   or trigger.event.data.old_state.state != trigger.event.data.new_state.state)) }}
+# actions:
+#   - action: text.set_value
+#     target:
+#       entity_id: text.waveshare_146_va_1_2_media_player_name
+#     data:
+#       value: "{{ state_attr(player, 'friendly_name') or player }}"
+#   - action: text.set_value
+#     target:
+#       entity_id: text.waveshare_146_va_1_2_media_player_state
+#     data:
+#       value: "{{ states(player) }}"
 ---
 substitutions:
   #bg_img: /config/esphome/images/default/waveshare_bg_tp420.jpgalarm_face_412.png
@@ -12,7 +46,7 @@ substitutions:
   left_sensor: "sensor.powerpal_real_time_power"
   right_switch: "light.tv_floor_lamp"
   #media player in home assistant
-  external_media_player: "living_room_speaker"
+  #external_media_player: "input_text.waveshare146_controled_player"
 
 esphome:
   name: waveshare-146-va
@@ -132,9 +166,9 @@ external_components:
     components: [spd2010_touch]
     refresh: 1h
 
-  - source: github://chickymonkey/QMI8658-Esphome
-    components: [qmi8658]
-    refresh: 1h
+#  - source: github://chickymonkey/QMI8658-Esphome
+#    components: [qmi8658]
+#    refresh: 1h
     
   #below PR is to fix color issue, can be removed once after July 2026 esphome 
 #  - source: github://pr#17176
@@ -993,28 +1027,28 @@ script:
       - homeassistant.action:
           action: media_player.media_pause
           data:
-            entity_id: media_player.${external_media_player}
+            entity_id: !lambda return id(controlled_media_player);
       - delay: 50ms
   - id: my_media_play
     then:
       - homeassistant.action:
           action: media_player.media_play
           data:
-            entity_id: media_player.${external_media_player}
+            entity_id: !lambda return id(controlled_media_player);
       - delay: 50ms
   - id: my_media_prev
     then:
       - homeassistant.action:
           action: media_player.media_previous_track
           data:
-            entity_id: media_player.${external_media_player}
+            entity_id: !lambda return id(controlled_media_player);
       - delay: 50ms
   - id: my_media_next
     then:
       - homeassistant.action:
           action: media_player.media_next_track
           data:
-            entity_id: media_player.${external_media_player}
+            entity_id: !lambda return id(controlled_media_player);
       - delay: 50ms
 
   - id: check_dim
@@ -1099,11 +1133,11 @@ i2c:
     scl: GPIO10
     #frequency: 50kHz
     #timeout: 1000ms
-qmi8658: #External component
-  - id: qmi8658_imu
-    i2c_id: bus_imu_touch_rtc
-    address: 0x6B
-    update_interval: 500ms
+#qmi8658: #External component
+#  - id: qmi8658_imu
+#    i2c_id: bus_imu_touch_rtc
+#    address: 0x6B
+#    update_interval: 500ms
     
 spd2010_touch:
   id: spd2010_touch_driver
@@ -1696,38 +1730,6 @@ lvgl:
 text_sensor:
   - platform: template
     id: text_response
-  ##external media status friendly_name
-  - platform: homeassistant
-    entity_id: media_player.${external_media_player}
-    id: ha_friendly_name
-    attribute: friendly_name
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: lbl_header
-            text: !lambda |-
-              std::string name = id(ha_friendly_name).state;
-              if (!name.empty()) name[0] = toupper(name[0]);
-              return name + "\n" + id(ha_media_status).state;
-
-  - platform: homeassistant
-    entity_id: media_player.${external_media_player}
-    id: ha_media_status
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: lbl_header
-            text: !lambda |-
-              std::string name = id(ha_friendly_name).state;
-              if (!name.empty()) name[0] = toupper(name[0]);
-              return name + "\n" + id(ha_media_status).state;
-        - lvgl.button.update:
-            id: bm_play
-            text: !lambda |-
-              //Alternate icon depending on status "\U000F03E4", #pause "\U000F040A", #play
-              return (id(ha_media_status).state == "playing")
-                ? std::string("\U000F03E4")   // e.g., mdi-pause
-                : std::string("\U000F040A");  // e.g., mdi-play
 
 #  - platform: homeassistant
 #    entity_id: media_player.${external_media_player}
@@ -1803,18 +1805,18 @@ sensor:
             text:
               format: "%d W"
               args: [ "(int) roundf(id(ha_power_w).state)" ]
-
-  - platform: qmi8658
-    qmi8658_id: qmi8658_imu
-    accel_x:
-      name: "Accel-qmi8658 X"
-      accuracy_decimals: 2
-    accel_y:
-      name: "Accel-qmi8658 Y"
-      accuracy_decimals: 2
-    accel_z:
-      name: "Accel-qmi8658 Z"
-      accuracy_decimals: 2
+  #Below works, just commented out to save resource.
+  #- platform: qmi8658
+  #  qmi8658_id: qmi8658_imu
+  #  accel_x:
+  #    name: "Accel-qmi8658 X"
+  #    accuracy_decimals: 2
+  #  accel_y:
+  #    name: "Accel-qmi8658 Y"
+  #    accuracy_decimals: 2
+  #  accel_z:
+  #    name: "Accel-qmi8658 Z"
+  #    accuracy_decimals: 2
       
 binary_sensor:
   - platform: homeassistant
@@ -1934,7 +1936,11 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'  
-       
+  #media player
+  - id: controlled_media_player
+    type: std::string
+    restore_value: false
+    initial_value: '"media_player.living_room_speaker_2"'
 text:
   - platform: template
     id: shopping_text
@@ -1983,6 +1989,58 @@ text:
         #text_color
         - lvgl.widget.redraw: bin_label
 
+  - platform: template
+    id: controlled_media_player_text
+    name: "Media player to control"
+    mode: text
+    restore_value: false
+    optimistic: true
+    on_value:
+      then:
+        - globals.set: 
+            id: controlled_media_player
+            value: !lambda |-
+              return x;
+
+  ##external media status friendly_name, set by HA automation
+  ##(homeassistant sensors can't follow a runtime-selected entity)
+  - platform: template
+    id: ha_friendly_name
+    name: "Media player name"
+    mode: text
+    restore_value: false
+    optimistic: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: lbl_header
+            text: !lambda |-
+              std::string name = id(ha_friendly_name).state;
+              if (!name.empty()) name[0] = toupper(name[0]);
+              return name + "\n" + id(ha_media_status).state;
+
+  ##external media status, set by HA automation
+  - platform: template
+    id: ha_media_status
+    name: "Media player state"
+    mode: text
+    restore_value: false
+    optimistic: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: lbl_header
+            text: !lambda |-
+              std::string name = id(ha_friendly_name).state;
+              if (!name.empty()) name[0] = toupper(name[0]);
+              return name + "\n" + id(ha_media_status).state;
+        - lvgl.button.update:
+            id: bm_play
+            text: !lambda |-
+              //Alternate icon depending on status "\U000F03E4", #pause "\U000F040A", #play
+              return (id(ha_media_status).state == "playing")
+                ? std::string("\U000F03E4")   // e.g., mdi-pause
+                : std::string("\U000F040A");  // e.g., mdi-play
  
 color:
   - id: active_timer_color
